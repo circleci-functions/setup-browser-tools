@@ -132,11 +132,12 @@ Cache failures are never fatal: a cache miss, an unreachable cache, or running o
 
 ## Setting a timeout
 
-There is no timeout flag. Set `no_output_timeout` on the step that invokes the function:
+There is no timeout flag. Set `no_output_timeout` on the step that runs the function:
 
 ```yaml
-- function/setup-browser-tools:
-    command: install-chrome
+- run:
+    name: Install Chrome
+    command: circleci run setup-browser-tools@<version> install-chrome
     no_output_timeout: 5m
 ```
 
@@ -150,48 +151,37 @@ There is no timeout flag. Set `no_output_timeout` on the step that invokes the f
 ## Examples
 
 ```yaml
-functions:
-  setup-browser-tools: github.com/circleci-functions/setup-browser-tools@v0.1.0
-
 jobs:
   test:
     docker:
       - image: cimg/base:current
     steps:
       # Chrome, ChromeDriver, Firefox and geckodriver
-      - function/setup-browser-tools:
-          command: install-browser-tools
+      - run: circleci run setup-browser-tools@<version> install-browser-tools
 
       # Chrome only
-      - function/setup-browser-tools:
-          command: install-chrome
+      - run: circleci run setup-browser-tools@<version> install-chrome
 
       # Pinned versions
-      - function/setup-browser-tools:
-          command: install-browser-tools
-          chrome-version: 147.0.7727.55
-          firefox-version: 149.0.2
+      - run: |
+          circleci run setup-browser-tools@<version> install-browser-tools \
+            --chrome-version 147.0.7727.55 \
+            --firefox-version 149.0.2
 
       # Swap Firefox and geckodriver for Edge and its driver
-      - function/setup-browser-tools:
-          command: install-browser-tools
-          firefox: false
-          geckodriver: false
-          edge: true
-          edge-driver: true
+      - run: |
+          circleci run setup-browser-tools@<version> install-browser-tools \
+            --no-firefox --no-geckodriver --edge --edge-driver
 
       # Chrome from the beta channel, with the download cached
-      - function/setup-browser-tools:
-          command: install-chrome
-          channel: beta
-          use-cache: true
-          cache-key: v2
+      - run: |
+          circleci run setup-browser-tools@<version> install-chrome \
+            --channel beta --use-cache --cache-key v2
 
       # Chrome for Testing and its driver, into a chosen directory
-      - function/setup-browser-tools:
-          command: install-chrome-for-testing
-          version: 147.0.7727.55
-          install-dir: /home/circleci/bin
+      - run: |
+          circleci run setup-browser-tools@<version> install-chrome-for-testing \
+            --version 147.0.7727.55 --install-dir /home/circleci/bin
 ```
 
 ## Platform support
