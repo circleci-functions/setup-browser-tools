@@ -20,6 +20,10 @@ type cli struct {
 	InstallChromedriver installChromedriverCmd `cmd:"" help:"Install ChromeDriver, matching the installed Chrome."`
 	InstallFirefox      installFirefoxCmd      `cmd:"" help:"Install Mozilla Firefox."`
 	InstallGeckodriver  installGeckodriverCmd  `cmd:"" help:"Install geckodriver, Mozilla's WebDriver proxy for Firefox."`
+
+	InstallChromeForTesting installChromeForTestingCmd `cmd:"" help:"Install Chrome for Testing, and optionally its matching ChromeDriver."`
+	InstallEdge             installEdgeCmd             `cmd:"" help:"Install Microsoft Edge."`
+	InstallEdgeDriver       installEdgeDriverCmd       `cmd:"" help:"Install Edge WebDriver, matching the installed Edge."`
 }
 
 type installChromeCmd struct {
@@ -90,6 +94,48 @@ func (c *installFirefoxCmd) Run(ctx context.Context, client *sdk.Client) error {
 		UseCache:   c.UseCache,
 		CacheKey:   c.CacheKey,
 	})
+}
+
+type installChromeForTestingCmd struct {
+	Version      string `help:"Version of Chrome for Testing to install. Defaults to the latest stable release." default:"latest"`
+	InstallDir   string `help:"Directory to symlink Chrome for Testing and its driver into." default:"/usr/local/bin"`
+	ChromeDriver bool   `help:"Also install the matching Chrome for Testing ChromeDriver." default:"true" negatable:""`
+}
+
+func (c *installChromeForTestingCmd) Run(ctx context.Context, client *sdk.Client) error {
+	installer, err := browser.NewInstaller(client, os.Stderr)
+	if err != nil {
+		return err
+	}
+	return installer.InstallChromeForTesting(ctx, browser.ChromeForTestingOptions{
+		Version:      c.Version,
+		InstallDir:   c.InstallDir,
+		ChromeDriver: c.ChromeDriver,
+	})
+}
+
+type installEdgeCmd struct {
+	Version string `help:"Version of Edge to install. Only honoured on Debian/Ubuntu; macOS always installs the latest." default:"latest"`
+}
+
+func (c *installEdgeCmd) Run(ctx context.Context, client *sdk.Client) error {
+	installer, err := browser.NewInstaller(client, os.Stderr)
+	if err != nil {
+		return err
+	}
+	return installer.InstallEdge(ctx, browser.EdgeOptions{Version: c.Version})
+}
+
+type installEdgeDriverCmd struct {
+	InstallDir string `help:"Directory to install Edge WebDriver into." default:"/usr/local/bin"`
+}
+
+func (c *installEdgeDriverCmd) Run(ctx context.Context, client *sdk.Client) error {
+	installer, err := browser.NewInstaller(client, os.Stderr)
+	if err != nil {
+		return err
+	}
+	return installer.InstallEdgeDriver(ctx, browser.EdgeDriverOptions{InstallDir: c.InstallDir})
 }
 
 func main() {
