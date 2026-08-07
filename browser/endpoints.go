@@ -11,6 +11,8 @@ type Endpoints struct {
 	ChromeDriverLegacy string
 	ChromeForTesting   string
 	GeckodriverGitHub  string
+	MozillaArchive     string
+	MozillaProduct     string
 }
 
 func DefaultEndpoints() Endpoints {
@@ -22,5 +24,7 @@ func DefaultEndpoints() Endpoints {
 		ChromeDriverLegacy: "https://chromedriver.storage.googleapis.com",
 		ChromeForTesting:   "https://googlechromelabs.github.io/chrome-for-testing",
 		GeckodriverGitHub:  "https://github.com/mozilla/geckodriver",
+		MozillaArchive:     "https://archive.mozilla.org/pub/firefox/releases",
+		MozillaProduct:     "https://product-details.mozilla.org/1.0",
 	}
 }

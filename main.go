@@ -18,6 +18,7 @@ import (
 type cli struct {
 	InstallChrome       installChromeCmd       `cmd:"" help:"Install Google Chrome."`
 	InstallChromedriver installChromedriverCmd `cmd:"" help:"Install ChromeDriver, matching the installed Chrome."`
+	InstallFirefox      installFirefoxCmd      `cmd:"" help:"Install Mozilla Firefox."`
 	InstallGeckodriver  installGeckodriverCmd  `cmd:"" help:"Install geckodriver, Mozilla's WebDriver proxy for Firefox."`
 }
 
@@ -68,6 +69,26 @@ func (c *installGeckodriverCmd) Run(ctx context.Context, client *sdk.Client) err
 	return installer.InstallGeckodriver(ctx, browser.GeckodriverOptions{
 		Version:    c.Version,
 		InstallDir: c.InstallDir,
+	})
+}
+
+type installFirefoxCmd struct {
+	Version    string `help:"Version of Firefox to install, e.g. 149.0.2 or 140.9.1esr. Defaults to the latest stable release." default:"latest"`
+	InstallDir string `help:"Directory to install Firefox into. A symlink is also created in /usr/local/bin." default:"/usr/local/bin"`
+	UseCache   bool   `help:"Restore and save the Firefox installer via the job cache. Ignored when --version is latest." default:"false"`
+	CacheKey   string `help:"Cache key prefix, for invalidating cached entries." default:"v1"`
+}
+
+func (c *installFirefoxCmd) Run(ctx context.Context, client *sdk.Client) error {
+	installer, err := browser.NewInstaller(client, os.Stderr)
+	if err != nil {
+		return err
+	}
+	return installer.InstallFirefox(ctx, browser.FirefoxOptions{
+		Version:    c.Version,
+		InstallDir: c.InstallDir,
+		UseCache:   c.UseCache,
+		CacheKey:   c.CacheKey,
 	})
 }
 
