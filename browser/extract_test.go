@@ -4,7 +4,6 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
-	"context"
 	"errors"
 	"io"
 	"os"
@@ -12,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ulikunitz/xz"
 	"gotest.tools/v3/assert"
 )
 
@@ -19,24 +19,17 @@ func TestExtract(t *testing.T) {
 	tests := []struct {
 		name    string
 		archive string
-		needTar bool
 	}{
 		{name: "zip", archive: "archive.zip"},
 		{name: "tar.gz", archive: "archive.tar.gz"},
 		{name: "tar.bz2", archive: "archive.tar.bz2"},
-		{name: "tar.xz", archive: "archive.tar.xz", needTar: true},
+		{name: "tar.xz", archive: "archive.tar.xz"},
 	}
-
-	r := &Runner{Priv: rootPrivilege(), Out: io.Discard}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.needTar && !(Host{}).has("tar") {
-				t.Skip("tar is not installed; .tar.xz extraction shells out to it")
-			}
-
 			dest := t.TempDir()
-			err := Extract(context.Background(), r, filepath.Join("testdata", tc.archive), dest)
+			err := Extract(filepath.Join("testdata", tc.archive), dest)
 			assert.NilError(t, err)
 
 			driver, err := os.ReadFile(filepath.Join(dest, "chromedriver"))
@@ -51,9 +44,7 @@ func TestExtract(t *testing.T) {
 }
 
 func TestExtractUnknownFormat(t *testing.T) {
-	r := &Runner{Priv: rootPrivilege(), Out: io.Discard}
-
-	err := Extract(context.Background(), r, filepath.Join("testdata", "payload.txt"), t.TempDir())
+	err := Extract(filepath.Join("testdata", "payload.txt"), t.TempDir())
 	assert.Assert(t, errors.Is(err, ErrUnknownArchive))
 }
 
@@ -124,9 +115,32 @@ func gzipFile(src, dest string) error {
 	return out.Close()
 }
 
-func TestExtractRejectsTraversal(t *testing.T) {
-	r := &Runner{Priv: rootPrivilege(), Out: io.Discard}
+func writeTarXZ(t *testing.T, headers []*tar.Header, bodies []string) string {
+	t.Helper()
 
+	gzPath := writeTarGz(t, headers, bodies)
+	tarPath := strings.TrimSuffix(gzPath, ".gz")
+
+	xzPath := tarPath + ".xz"
+	in, err := os.Open(tarPath) //nolint:gosec // under t.TempDir()
+	assert.NilError(t, err)
+	defer in.Close()
+
+	out, err := os.Create(xzPath) //nolint:gosec // under t.TempDir()
+	assert.NilError(t, err)
+	defer out.Close()
+
+	xw, err := xz.NewWriter(out)
+	assert.NilError(t, err)
+	_, err = io.Copy(xw, in)
+	assert.NilError(t, err)
+	assert.NilError(t, xw.Close())
+	assert.NilError(t, out.Close())
+
+	return xzPath
+}
+
+func TestExtractRejectsTraversal(t *testing.T) {
 	tests := []struct {
 		name  string
 		build func(t *testing.T) string
@@ -158,6 +172,14 @@ func TestExtractRejectsTraversal(t *testing.T) {
 			},
 		},
 		{
+			name: "tar.xz member climbing out with ..",
+			build: func(t *testing.T) string {
+				return writeTarXZ(t,
+					[]*tar.Header{{Name: "../escaped.txt", Typeflag: tar.TypeReg, Size: 5, Mode: 0o600}},
+					[]string{"pwned"})
+			},
+		},
+		{
 			name: "tar symlink pointing at an absolute path",
 			build: func(t *testing.T) string {
 				return writeTarGz(t,
@@ -178,7 +200,7 @@ func TestExtractRejectsTraversal(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			dest := t.TempDir()
-			err := Extract(context.Background(), r, tc.build(t), dest)
+			err := Extract(tc.build(t), dest)
 
 			var target *ErrUnsafePath
 			assert.Assert(t, errors.As(err, &target), "got %v", err)
@@ -201,8 +223,7 @@ func TestExtractPreservesRelativeSymlinks(t *testing.T) {
 		[]string{"lib", ""})
 
 	dest := t.TempDir()
-	r := &Runner{Priv: rootPrivilege(), Out: io.Discard}
-	assert.NilError(t, Extract(context.Background(), r, archive, dest))
+	assert.NilError(t, Extract(archive, dest))
 
 	got, err := os.ReadFile(filepath.Join(dest, "libnss.so"))
 	assert.NilError(t, err)

@@ -5,13 +5,14 @@ import (
 	"archive/zip"
 	"compress/bzip2"
 	"compress/gzip"
-	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/ulikunitz/xz"
 )
 
 // maxEntrySize caps what a single archive member may expand to, so a malformed
@@ -31,11 +32,9 @@ func (e *ErrUnsafePath) Error() string {
 }
 
 // Extract unpacks archivePath into destDir, dispatching on the file extension.
-//
-// .tar.xz is handed to the tar binary because the standard library has no xz
-// decoder; the alternative is a third-party xz dependency for one format. tar is
-// already among the orb's stated requirements.
-func Extract(ctx context.Context, r *Runner, archivePath, destDir string) error {
+// Every format goes through safeJoin, and nothing shells out, so extraction
+// needs no external tool present.
+func Extract(archivePath, destDir string) error {
 	switch {
 	case strings.HasSuffix(archivePath, ".zip"):
 		return extractZip(archivePath, destDir)
@@ -44,7 +43,7 @@ func Extract(ctx context.Context, r *Runner, archivePath, destDir string) error 
 	case strings.HasSuffix(archivePath, ".tar.bz2"):
 		return extractTar(archivePath, destDir, bzip2Reader)
 	case strings.HasSuffix(archivePath, ".tar.xz"):
-		return extractTarXZ(ctx, r, archivePath, destDir)
+		return extractTar(archivePath, destDir, xzReader)
 	default:
 		return fmt.Errorf("%w: %s", ErrUnknownArchive, filepath.Base(archivePath))
 	}
@@ -110,6 +109,14 @@ func gzipReader(r io.Reader) (io.Reader, error) {
 }
 
 func bzip2Reader(r io.Reader) (io.Reader, error) { return bzip2.NewReader(r), nil }
+
+func xzReader(r io.Reader) (io.Reader, error) {
+	xr, err := xz.NewReader(r)
+	if err != nil {
+		return nil, fmt.Errorf("xz: %w", err)
+	}
+	return xr, nil
+}
 
 func extractTar(archivePath, destDir string, wrap decompressor) error {
 	f, err := os.Open(archivePath) //nolint:gosec // a file this process just downloaded
@@ -208,16 +215,4 @@ func writeFile(target string, src io.Reader, mode os.FileMode) error {
 		return fmt.Errorf("write %s: %w", target, err)
 	}
 	return out.Close()
-}
-
-func extractTarXZ(ctx context.Context, r *Runner, archivePath, destDir string) error {
-	if _, err := r.Run(ctx, Command{
-		Name:         "tar",
-		Args:         []string{"-xJf", archivePath, "-C", destDir},
-		Unprivileged: true,
-		Quiet:        true,
-	}); err != nil {
-		return fmt.Errorf("extract %s: %w", filepath.Base(archivePath), err)
-	}
-	return nil
 }
