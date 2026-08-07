@@ -21,41 +21,51 @@ func TestVerifySums(t *testing.T) {
 		wantNotFound    bool
 	}{
 		{
-			name:     "sha256 match",
+			name:     "sha256 match on the exact entry",
 			manifest: "SHA256SUMS",
-			filename: "payload.txt",
+			filename: "linux-x86_64/en-US/payload.txt",
 		},
 		{
 			name:     "sha512 match",
 			manifest: "SHA512SUMS",
-			filename: "payload.txt",
-		},
-		{
-			name:     "manifest path prefix is ignored, base name matches",
-			manifest: "SHA256SUMS",
 			filename: "linux-x86_64/en-US/payload.txt",
 		},
 		{
 			name:     "malformed lines are skipped",
 			manifest: "SHA256SUMS.messy",
-			filename: "payload.txt",
+			filename: "linux-x86_64/en-US/payload.txt",
 		},
 		{
-			name:            "mismatch reports both digests",
+			// Mozilla lists this same base name for every architecture and every
+			// locale, each with its own digest. Matching on the base name picked an
+			// arbitrary one, which made Firefox uninstallable.
+			name:            "a different architecture with the same base name is not accepted",
 			manifest:        "SHA256SUMS",
-			filename:        "other.txt",
+			filename:        "linux-i686/en-US/payload.txt",
 			wantErrContains: "checksum mismatch",
 		},
 		{
-			name:         "filename absent from the manifest",
+			name:            "a different locale with the same base name is not accepted",
+			manifest:        "SHA256SUMS",
+			filename:        "linux-x86_64/de/payload.txt",
+			wantErrContains: "checksum mismatch",
+		},
+		{
+			name:         "a bare base name no longer matches anything",
 			manifest:     "SHA256SUMS",
-			filename:     "not-listed.tar.xz",
+			filename:     "payload.txt",
+			wantNotFound: true,
+		},
+		{
+			name:         "entry absent from the manifest",
+			manifest:     "SHA256SUMS",
+			filename:     "linux-x86_64/en-US/not-listed.tar.xz",
 			wantNotFound: true,
 		},
 		{
 			name:            "digest of an unrecognised length",
 			manifest:        "SHA256SUMS.short",
-			filename:        "payload.txt",
+			filename:        "linux-x86_64/en-US/payload.txt",
 			wantErrContains: "8-character digest",
 		},
 	}
@@ -70,7 +80,7 @@ func TestVerifySums(t *testing.T) {
 			case tc.wantNotFound:
 				var target *ErrNotInManifest
 				assert.Assert(t, errors.As(err, &target), "got %v", err)
-				assert.Equal(t, target.Filename, "not-listed.tar.xz")
+				assert.Equal(t, target.Filename, tc.filename)
 			case tc.wantErrContains != "":
 				assert.Assert(t, err != nil)
 				assert.Assert(t, strings.Contains(err.Error(), tc.wantErrContains),
@@ -87,7 +97,7 @@ func TestVerifySumsMismatchNamesExpectedAndActual(t *testing.T) {
 	tampered := filepath.Join(dir, "payload.txt")
 	assert.NilError(t, os.WriteFile(tampered, []byte("tampered\n"), 0o600))
 
-	err := VerifySums(filepath.Join("testdata", "SHA256SUMS"), "payload.txt", tampered)
+	err := VerifySums(filepath.Join("testdata", "SHA256SUMS"), "linux-x86_64/en-US/payload.txt", tampered)
 	assert.Assert(t, err != nil)
 	// Both digests must appear, or the failure cannot be diagnosed from the log.
 	assert.Assert(t, strings.Contains(err.Error(), "01179dc294ceea33cd319f79d3860e084f764e10be49aec784d23467b451f610"),
@@ -97,12 +107,12 @@ func TestVerifySumsMismatchNamesExpectedAndActual(t *testing.T) {
 
 func TestVerifySumsMissingFiles(t *testing.T) {
 	t.Run("missing manifest", func(t *testing.T) {
-		err := VerifySums(filepath.Join("testdata", "nope"), "payload.txt", filepath.Join("testdata", "payload.txt"))
+		err := VerifySums(filepath.Join("testdata", "nope"), "linux-x86_64/en-US/payload.txt", filepath.Join("testdata", "payload.txt"))
 		assert.Assert(t, err != nil)
 	})
 
 	t.Run("missing subject", func(t *testing.T) {
-		err := VerifySums(filepath.Join("testdata", "SHA256SUMS"), "payload.txt", filepath.Join("testdata", "nope"))
+		err := VerifySums(filepath.Join("testdata", "SHA256SUMS"), "linux-x86_64/en-US/payload.txt", filepath.Join("testdata", "nope"))
 		assert.Assert(t, err != nil)
 		assert.Assert(t, strings.Contains(err.Error(), "hashing"))
 	})
@@ -116,7 +126,7 @@ func TestParseSumsLine(t *testing.T) {
 		wantName   string
 		wantOK     bool
 	}{
-		{name: "two fields", line: "abc123  payload.txt", wantDigest: "abc123", wantName: "payload.txt", wantOK: true},
+		{name: "two fields", line: "abc123  a/b/payload.txt", wantDigest: "abc123", wantName: "a/b/payload.txt", wantOK: true},
 		{name: "binary mode asterisk is stripped", line: "abc123 *payload.txt", wantDigest: "abc123", wantName: "payload.txt", wantOK: true},
 		{name: "blank line", line: "", wantOK: false},
 		{name: "one field", line: "abc123", wantOK: false},

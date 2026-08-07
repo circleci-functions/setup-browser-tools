@@ -71,15 +71,43 @@ func TestFirefoxRelease(t *testing.T) {
 	}
 }
 
-func TestFirefoxReleaseFilenameMatchesManifestBaseName(t *testing.T) {
-	// The archive is saved under its own name so the checksum manifest, which
-	// lists "linux-x86_64/en-US/firefox-149.0.2.tar.xz", matches on base name.
-	// The orb saved it flattened and had to rewrite SHA256SUMS with perl.
-	i, _ := testInstaller(t, installerOpts{distro: DistroDebian})
+func TestFirefoxReleaseManifestEntryIsTheFullPath(t *testing.T) {
+	// One Mozilla manifest lists the same base name for every architecture and
+	// every locale, so the lookup has to use the full path.
+	tests := []struct {
+		name    string
+		distro  Distro
+		arch    string
+		version string
+		want    string
+	}{
+		{
+			name:    "linux",
+			distro:  DistroDebian,
+			arch:    ArchAMD64,
+			version: "149.0.2",
+			want:    "linux-x86_64/en-US/firefox-149.0.2.tar.xz",
+		},
+		{
+			name:    "macOS",
+			distro:  DistroMacOS,
+			arch:    ArchARM64,
+			version: "149.0.2",
+			want:    "mac/en-US/Firefox 149.0.2.dmg",
+		},
+	}
 
-	rel, err := i.firefoxRelease("149.0.2")
-	assert.NilError(t, err)
-	assert.Equal(t, rel.Filename, filepath.Base("linux-x86_64/en-US/firefox-149.0.2.tar.xz"))
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			i, _ := testInstaller(t, installerOpts{distro: tc.distro, arch: tc.arch})
+
+			rel, err := i.firefoxRelease(tc.version)
+			assert.NilError(t, err)
+			assert.Equal(t, rel.ManifestEntry, tc.want)
+			// The local copy keeps just the file name.
+			assert.Equal(t, rel.Filename, filepath.Base(tc.want))
+		})
+	}
 }
 
 func TestResolveFirefoxVersion(t *testing.T) {

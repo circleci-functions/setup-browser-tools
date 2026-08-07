@@ -203,7 +203,7 @@ Coverage varies by browser, because the vendors publish different builds.
 | `install-chrome` | yes | yes | yes, as Chromium | yes | no | no |
 | `install-chromedriver` | yes | yes | yes | `unzip` only | no | no |
 | `install-firefox` | yes | yes | no | yes | no | no |
-| `install-geckodriver` | yes | yes | no | no | no | no |
+| `install-geckodriver` | yes | yes | yes | yes | no | no |
 | `install-chrome-for-testing` | yes | yes | no | no | no | no |
 | `install-edge` | yes | yes | no | no | no | no |
 | `install-edge-driver` | yes | yes | no | no | no | no |

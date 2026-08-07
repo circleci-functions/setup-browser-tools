@@ -10,7 +10,6 @@ import (
 	"hash"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 )
@@ -29,12 +28,16 @@ func (e *ErrNotInManifest) Error() string {
 	return fmt.Sprintf("%s has no entry for %s", e.Manifest, e.Filename)
 }
 
-// VerifySums checks path against the digest recorded for filename in a
-// SHA256SUMS or SHA512SUMS manifest. The algorithm comes from the length of the
-// recorded digest, so one function handles either manifest without being told
-// which it was given.
-func VerifySums(manifestPath, filename, path string) error {
-	want, err := digestFromManifest(manifestPath, filename)
+// VerifySums checks path against the digest recorded for entry in a SHA256SUMS or
+// SHA512SUMS manifest. entry must be the name exactly as the manifest lists it,
+// which for Mozilla means the full "linux-x86_64/en-US/firefox-153.0.3.tar.xz"
+// and not just the base name — one manifest lists that same base name for every
+// architecture and every locale, so a base-name match picks an arbitrary one.
+//
+// The algorithm comes from the length of the recorded digest, so one function
+// handles either manifest without being told which it was given.
+func VerifySums(manifestPath, entry, path string) error {
+	want, err := digestFromManifest(manifestPath, entry)
 	if err != nil {
 		return err
 	}
@@ -47,7 +50,7 @@ func VerifySums(manifestPath, filename, path string) error {
 		h = sha512.New()
 	default:
 		return fmt.Errorf("%s: entry for %s has a %d-character digest, expected %d or %d",
-			manifestPath, filename, len(want), sha256HexLen, sha512HexLen)
+			manifestPath, entry, len(want), sha256HexLen, sha512HexLen)
 	}
 
 	got, err := hashFile(path, h)
@@ -57,7 +60,7 @@ func VerifySums(manifestPath, filename, path string) error {
 
 	if got != want {
 		return fmt.Errorf("checksum mismatch for %s: manifest %s records %s, file is %s",
-			filename, filepath.Base(manifestPath), want, got)
+			entry, filepath.Base(manifestPath), want, got)
 	}
 	return nil
 }
@@ -75,21 +78,18 @@ func hashFile(path string, h hash.Hash) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// digestFromManifest matches on the base name, so a manifest listing
-// "linux-x86_64/en-US/firefox-149.0.tar.xz" still matches a locally saved
-// "firefox-149.0.tar.xz".
-func digestFromManifest(manifestPath, filename string) (string, error) {
+// digestFromManifest returns the digest recorded for exactly entry.
+func digestFromManifest(manifestPath, entry string) (string, error) {
 	f, err := os.Open(manifestPath) //nolint:gosec // a file this process just downloaded
 	if err != nil {
 		return "", fmt.Errorf("open %s: %w", manifestPath, err)
 	}
 	defer f.Close()
 
-	want := filepath.Base(filename)
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		digest, name, ok := parseSumsLine(scanner.Text())
-		if ok && path.Base(name) == want {
+		if ok && name == entry {
 			return digest, nil
 		}
 	}
@@ -97,7 +97,7 @@ func digestFromManifest(manifestPath, filename string) (string, error) {
 		return "", fmt.Errorf("read %s: %w", manifestPath, err)
 	}
 
-	return "", &ErrNotInManifest{Filename: want, Manifest: filepath.Base(manifestPath)}
+	return "", &ErrNotInManifest{Filename: entry, Manifest: filepath.Base(manifestPath)}
 }
 
 func parseSumsLine(line string) (digest, name string, ok bool) {

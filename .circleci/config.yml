@@ -113,9 +113,10 @@ jobs:
             firefox --version
             geckodriver --version
 
-  # The warn-and-skip path. Firefox and geckodriver are on by default and
-  # unsupported here, so this must exit 0 having installed Chrome and
-  # ChromeDriver, and must say why it skipped the other two.
+  # The warn-and-skip path. Firefox is on by default and unsupported here, so
+  # this must exit 0 having installed everything else and said why it skipped
+  # Firefox. geckodriver's linux64 build does run on Alpine — verified here
+  # rather than assumed.
   install-alpine-default-set:
     executor: alpine
     steps:
@@ -131,12 +132,12 @@ jobs:
           name: Assert it warned rather than failed
           command: |
             grep -q "skipping Firefox" /tmp/alpine.log
-            grep -q "skipping geckodriver" /tmp/alpine.log
       - run:
-          name: Assert Chromium and its driver still work
+          name: Assert everything Alpine does support still works
           command: |
             chromium-browser --version
             chromedriver --version
+            geckodriver --version
 
   # Explicitly asking for an unsupported component must fail, unlike the row
   # above where the same component was only on by default.
