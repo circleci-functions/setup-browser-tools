@@ -5,14 +5,41 @@ package main
 
 import (
 	"context"
+	"os"
 
 	"github.com/alecthomas/kong"
 
 	"github.com/circleci-functions/toolkit/functionyaml"
 	"github.com/circleci-functions/toolkit/sdk"
+
+	"github.com/circleci-functions/setup-browser-tools/browser"
 )
 
-type cli struct{}
+type cli struct {
+	InstallChrome installChromeCmd `cmd:"" help:"Install Google Chrome."`
+}
+
+type installChromeCmd struct {
+	Version         string `help:"Version of Chrome to install, e.g. 147.0.7727.55. Defaults to the latest stable release." default:"latest"`
+	Channel         string `help:"Release channel to install." enum:"stable,beta" default:"stable"`
+	ReplaceExisting bool   `help:"Replace an existing Chrome installation when it is a different version." default:"false"`
+	UseCache        bool   `help:"Restore and save Chrome via the job cache. Increases cost and rarely speeds things up; use only when downloads are unreliable." default:"false"`
+	CacheKey        string `help:"Cache key prefix, for invalidating cached entries." default:"v1"`
+}
+
+func (c *installChromeCmd) Run(ctx context.Context, client *sdk.Client) error {
+	installer, err := browser.NewInstaller(client, os.Stderr)
+	if err != nil {
+		return err
+	}
+	return installer.InstallChrome(ctx, browser.ChromeOptions{
+		Version:         c.Version,
+		Channel:         c.Channel,
+		ReplaceExisting: c.ReplaceExisting,
+		UseCache:        c.UseCache,
+		CacheKey:        c.CacheKey,
+	})
+}
 
 func main() {
 	sdk.Run(run)
