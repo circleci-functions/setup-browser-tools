@@ -63,7 +63,6 @@ func testInstaller(t *testing.T, opts installerOpts) (*Installer, *[]invocation)
 			ChromiumDash:    opts.endpoint,
 			GoogleLinux:     opts.endpoint,
 			GoogleChromeMac: opts.endpoint,
-			CentOSMirror:    opts.endpoint,
 		}
 	}
 
@@ -332,45 +331,51 @@ func TestInstallChromeRejectsUnresolvableVersion(t *testing.T) {
 
 func TestVerifyChrome(t *testing.T) {
 	tests := []struct {
-		name    string
-		banner  string
-		onPath  []string
-		target  string
-		want    string
-		wantErr bool
+		name      string
+		banner    string
+		onPath    []string
+		requested string
+		target    string
+		want      string
+		wantErr   bool
 	}{
 		{
-			name:   "exact match",
-			onPath: []string{"google-chrome-stable"},
-			banner: "Google Chrome 147.0.7727.55 \n",
-			target: "147.0.7727.55",
-			want:   "147.0.7727.55",
+			name:      "exact match",
+			onPath:    []string{"google-chrome-stable"},
+			banner:    "Google Chrome 147.0.7727.55 \n",
+			requested: "147.0.7727.55",
+			target:    "147.0.7727.55",
+			want:      "147.0.7727.55",
 		},
 		{
-			name:   "latest accepts whatever installed",
-			onPath: []string{"google-chrome-stable"},
-			banner: "Google Chrome 147.0.7727.55 \n",
-			target: Latest,
-			want:   "147.0.7727.55",
+			name:      "latest accepts whatever the package manager installed",
+			onPath:    []string{"google-chrome-stable"},
+			banner:    "Google Chrome 136.0.7103.113 \n",
+			requested: Latest,
+			target:    "151.0.7922.108",
+			want:      "136.0.7103.113",
 		},
 		{
-			name:   "packaged build differs in the last component",
-			onPath: []string{"google-chrome-stable"},
-			banner: "Google Chrome 147.0.7727.60 \n",
-			target: "147.0.7727.55",
-			want:   "147.0.7727.60",
+			name:      "packaged build differs in the last component",
+			onPath:    []string{"google-chrome-stable"},
+			banner:    "Google Chrome 147.0.7727.60 \n",
+			requested: "147.0.7727.55",
+			target:    "147.0.7727.55",
+			want:      "147.0.7727.60",
 		},
 		{
-			name:    "a different major version fails",
-			onPath:  []string{"google-chrome-stable"},
-			banner:  "Google Chrome 140.0.1.2 \n",
-			target:  "147.0.7727.55",
-			wantErr: true,
+			name:      "a pinned version that did not install fails",
+			onPath:    []string{"google-chrome-stable"},
+			banner:    "Google Chrome 140.0.1.2 \n",
+			requested: "147.0.7727.55",
+			target:    "147.0.7727.55",
+			wantErr:   true,
 		},
 		{
-			name:    "nothing on PATH fails",
-			target:  "147.0.7727.55",
-			wantErr: true,
+			name:      "nothing on PATH fails even for latest",
+			requested: Latest,
+			target:    "147.0.7727.55",
+			wantErr:   true,
 		},
 	}
 
@@ -382,7 +387,7 @@ func TestVerifyChrome(t *testing.T) {
 				stdouts: map[string]string{"--version": tc.banner},
 			})
 
-			got, err := i.verifyChrome(context.Background(), tc.target, ChannelStable)
+			got, err := i.verifyChrome(context.Background(), tc.requested, tc.target, ChannelStable)
 			if tc.wantErr {
 				assert.Assert(t, err != nil, "got %q", got)
 				return
@@ -432,4 +437,80 @@ func TestVersionPrefix(t *testing.T) {
 			assert.Equal(t, versionPrefix(tc.in), tc.want)
 		})
 	}
+}
+
+func TestResolveChromeVersionSkipsChromiumDashOnAlpine(t *testing.T) {
+	// apk decides the version on Alpine, so there is nothing to resolve against.
+	// Any request to chromiumdash here would be both pointless and, since the
+	// resolved value was previously used as a verification target, actively wrong.
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		fmt.Fprint(w, `[{"version":"151.0.7922.108"}]`)
+	}))
+	defer srv.Close()
+
+	i, _ := testInstaller(t, installerOpts{distro: DistroAlpine, endpoint: srv.URL})
+	i.Fetcher = Fetcher{HTTPClient: srv.Client()}
+
+	got, err := i.resolveChromeVersion(context.Background(), Latest, ChannelStable)
+	assert.NilError(t, err)
+	assert.Equal(t, got, Latest)
+	assert.Equal(t, hits, 0, "Alpine must not query chromiumdash")
+}
+
+func TestInstallChromeDebianRepoMakesTheKeyringReadable(t *testing.T) {
+	// apt runs as _apt and silently ignores a keyring it cannot read, which
+	// surfaces as NO_PUBKEY. Download writes 0600 and cp preserves it, so the
+	// mode has to be widened explicitly.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, "-----BEGIN PGP PUBLIC KEY BLOCK-----")
+	}))
+	defer srv.Close()
+
+	i, calls := testInstaller(t, installerOpts{distro: DistroDebian, endpoint: srv.URL})
+	i.Fetcher = Fetcher{HTTPClient: srv.Client()}
+
+	_ = i.installChromeDebianRepo(context.Background(), ChannelStable)
+
+	var chmodded []string
+	for _, c := range *calls {
+		if c.name == "chmod" && len(c.args) == 2 && c.args[0] == "0644" {
+			chmodded = append(chmodded, c.args[1])
+		}
+	}
+	assert.Assert(t, len(chmodded) >= 1, "the keyring was never made readable: %+v", *calls)
+	assert.Assert(t, strings.Contains(strings.Join(chmodded, " "), "trusted.gpg.d"),
+		"got %v", chmodded)
+}
+
+func TestInstallChromeRHELResolvesDepsViaYum(t *testing.T) {
+	// The orb downloads liberation-fonts from mirror.centos.org/centos/7, retired
+	// with CentOS 7 in 2024 and now a 404, so its RHEL path cannot work at all.
+	// yum install on a local file resolves dependencies from the distro's repos.
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		fmt.Fprint(w, "rpm-contents")
+	}))
+	defer srv.Close()
+
+	i, calls := testInstaller(t, installerOpts{distro: DistroRHEL, endpoint: srv.URL})
+	i.Fetcher = Fetcher{HTTPClient: srv.Client()}
+
+	assert.NilError(t, i.installChromeRHEL(context.Background(), "147.0.7727.55", Latest, ChannelStable))
+
+	for _, p := range paths {
+		assert.Assert(t, !strings.Contains(p, "liberation-fonts"),
+			"the dead CentOS 7 font mirror must not be fetched: %v", paths)
+	}
+
+	var yum *invocation
+	for idx := range *calls {
+		if c := (*calls)[idx]; c.name == "yum" {
+			yum = &c
+		}
+	}
+	assert.Assert(t, yum != nil, "yum was never run: %+v", *calls)
+	assert.Equal(t, yum.args[0], "install", "localinstall does not resolve dependencies")
 }

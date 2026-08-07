@@ -30,9 +30,12 @@ type firefoxRelease struct {
 	Version string
 	// Platform is Mozilla's directory name for the build.
 	Platform string
-	// Filename is the archive's own name, which is also how it appears in the
-	// checksum manifest.
+	// Filename is the archive's own name, used for the local copy.
 	Filename string
+	// ManifestEntry is the path exactly as the checksum manifest lists it. One
+	// manifest carries the same base name for every architecture and locale, so
+	// the full path is what makes the lookup unambiguous.
+	ManifestEntry string
 	// URL is the full download URL, percent-encoded.
 	URL string
 }
@@ -126,10 +129,9 @@ func (i *Installer) resolveFirefoxVersion(ctx context.Context, requested string)
 }
 
 // firefoxRelease works out the platform directory, archive name and URL. The
-// archive is deliberately saved under its own name rather than the orb's
-// flattened "linux-x86_64-en-US-firefox-149.0.tar.xz", because that name matches
-// the checksum manifest and removes the need for the orb's perl rewriting of
-// SHA256SUMS.
+// archive is saved under its own name rather than the orb's flattened
+// "linux-x86_64-en-US-firefox-149.0.tar.xz"; the manifest is then looked up by
+// full path, which is unambiguous and needs none of the orb's perl rewriting.
 func (i *Installer) firefoxRelease(version string) (firefoxRelease, error) {
 	major, err := majorVersion(version)
 	if err != nil {
@@ -149,6 +151,7 @@ func (i *Installer) firefoxRelease(version string) (firefoxRelease, error) {
 		rel.Filename = "firefox-" + version + ext
 	}
 
+	rel.ManifestEntry = rel.Platform + "/en-US/" + rel.Filename
 	rel.URL = fmt.Sprintf("%s/%s/%s/en-US/%s",
 		i.Endpoints.MozillaArchive, version, rel.Platform, url.PathEscape(rel.Filename))
 	return rel, nil
@@ -212,7 +215,7 @@ func (i *Installer) fetchAndVerifyFirefox(ctx context.Context, dir string, rel f
 	if err != nil {
 		return "", err
 	}
-	if err := VerifySums(manifest, rel.Filename, archive); err != nil {
+	if err := VerifySums(manifest, rel.ManifestEntry, archive); err != nil {
 		return "", err
 	}
 	return archive, nil
@@ -269,6 +272,11 @@ func (i *Installer) installFirefoxLinux(ctx context.Context, dir, archive, versi
 	versioned := filepath.Join(installDir, "firefox-"+version)
 	_ = i.Runner.Exec(ctx, "rm", "-rf", versioned)
 	if err := i.Runner.Exec(ctx, "cp", "-R", filepath.Join(extracted, "firefox"), versioned); err != nil {
+		return err
+	}
+	// The tree is copied in as root and then run by the job user, so it has to be
+	// traversable regardless of the modes it arrived with.
+	if err := i.Runner.Exec(ctx, "chmod", "-R", "a+rX", versioned); err != nil {
 		return err
 	}
 	if err := i.Runner.Exec(ctx, "chmod", "+x", filepath.Join(versioned, "firefox")); err != nil {

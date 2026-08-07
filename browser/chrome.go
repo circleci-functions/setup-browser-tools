@@ -47,7 +47,7 @@ func (i *Installer) InstallChrome(ctx context.Context, opts ChromeOptions) error
 		return err
 	}
 
-	installed, err := i.verifyChrome(ctx, target, opts.Channel)
+	installed, err := i.verifyChrome(ctx, requested, target, opts.Channel)
 	if err != nil {
 		return err
 	}
@@ -65,6 +65,11 @@ func (i *Installer) InstallChrome(ctx context.Context, opts ChromeOptions) error
 func (i *Installer) resolveChromeVersion(ctx context.Context, requested, channel string) (string, error) {
 	if requested != Latest {
 		return requested, nil
+	}
+	// On Alpine the apk package decides the version, so there is nothing to
+	// resolve it against.
+	if i.Platform.Distro == DistroAlpine {
+		return Latest, nil
 	}
 
 	var releases []struct {
@@ -266,6 +271,14 @@ func (i *Installer) chromeMacURL(channel string) string {
 	return fmt.Sprintf("%s/%s/%s/googlechrome.pkg", i.Endpoints.GoogleChromeMac, channel, acceptTOS)
 }
 
+// installChromeRHEL installs the .rpm and lets yum resolve its dependencies from
+// the distro's own repositories.
+//
+// The orb instead downloads liberation-fonts from a hardcoded
+// mirror.centos.org/centos/7 URL. That mirror was retired along with CentOS 7 in
+// 2024 and now answers 404, so the orb's RHEL path cannot succeed on any host
+// today. `yum install` on a local file resolves dependencies, which is what the
+// separate font download was working around on CentOS 7's older yum.
 func (i *Installer) installChromeRHEL(ctx context.Context, target, requested, channel string) error {
 	dir, cleanup, err := TempDir("chrome")
 	if err != nil {
@@ -273,19 +286,11 @@ func (i *Installer) installChromeRHEL(ctx context.Context, target, requested, ch
 	}
 	defer cleanup()
 
-	fonts, err := i.Fetcher.Download(ctx, i.liberationFontsURL(), dir, "liberation-fonts.rpm")
-	if err != nil {
-		return err
-	}
-	if err := i.Runner.Exec(ctx, "yum", "localinstall", "-y", fonts); err != nil {
-		return err
-	}
-
 	rpm, err := i.Fetcher.Download(ctx, i.chromeRPMURL(target, requested, channel), dir, "google-chrome.rpm")
 	if err != nil {
 		return err
 	}
-	return i.Runner.Exec(ctx, "yum", "localinstall", "-y", rpm)
+	return i.Runner.Exec(ctx, "yum", "install", "-y", rpm)
 }
 
 func (i *Installer) chromeRPMURL(target, requested, channel string) string {
@@ -294,10 +299,6 @@ func (i *Installer) chromeRPMURL(target, requested, channel string) string {
 	}
 	return fmt.Sprintf("%s/chrome/rpm/stable/x86_64/google-chrome-%s-%s-1.x86_64.rpm",
 		i.Endpoints.GoogleLinux, channel, target)
-}
-
-func (i *Installer) liberationFontsURL() string {
-	return i.Endpoints.CentOSMirror + "/centos/7/os/x86_64/Packages/liberation-fonts-1.07.2-16.el7.noarch.rpm"
 }
 
 func (i *Installer) installChromeDebian(ctx context.Context, target, requested, channel string) error {
@@ -318,7 +319,13 @@ func (i *Installer) installChromeDebianRepo(ctx context.Context, channel string)
 	if err != nil {
 		return err
 	}
-	if err := i.Runner.Exec(ctx, "cp", key, "/etc/apt/trusted.gpg.d/linux_signing_key.asc"); err != nil {
+	const keyring = "/etc/apt/trusted.gpg.d/linux_signing_key.asc"
+	if err := i.Runner.Exec(ctx, "cp", key, keyring); err != nil {
+		return err
+	}
+	// apt runs as the _apt user and silently ignores a keyring it cannot read,
+	// which surfaces later as NO_PUBKEY rather than a permissions error.
+	if err := i.Runner.Exec(ctx, "chmod", "0644", keyring); err != nil {
 		return err
 	}
 
@@ -327,7 +334,11 @@ func (i *Installer) installChromeDebianRepo(ctx context.Context, channel string)
 	if err := writeFile(list, strings.NewReader(entry), 0o644); err != nil {
 		return err
 	}
-	if err := i.Runner.Exec(ctx, "cp", list, "/etc/apt/sources.list.d/google-chrome.list"); err != nil {
+	const listPath = "/etc/apt/sources.list.d/google-chrome.list"
+	if err := i.Runner.Exec(ctx, "cp", list, listPath); err != nil {
+		return err
+	}
+	if err := i.Runner.Exec(ctx, "chmod", "0644", listPath); err != nil {
 		return err
 	}
 
@@ -374,16 +385,23 @@ func (i *Installer) aptInstall(ctx context.Context, packages ...string) error {
 	return err
 }
 
-// verifyChrome confirms Chrome runs and reports the version wanted. A pinned
-// version is accepted on a major.minor.build prefix too, matching the orb, since
-// the packaged build can differ in its last component.
-func (i *Installer) verifyChrome(ctx context.Context, target, channel string) (string, error) {
+// verifyChrome confirms Chrome runs and reports the version wanted.
+//
+// When the caller asked for "latest", any working install satisfies it. The
+// package manager picks the version, and it is routinely not the newest release
+// Google has announced — Alpine's apk Chromium trails it by months, and apt can
+// be a build behind. Resolving "latest" is still useful for the installation
+// check and the cache key, but it is not something to hold the install to.
+//
+// A pinned version is accepted on a major.minor.build prefix as well, matching
+// the orb, since the packaged build can differ in its last component.
+func (i *Installer) verifyChrome(ctx context.Context, requested, target, channel string) (string, error) {
 	installed, found := i.installedChromeVersion(ctx, channel)
 	if !found {
 		return "", fmt.Errorf("no working Chrome on PATH after installing %s", target)
 	}
-	if target == Latest || installed == target || strings.HasPrefix(target, installed) ||
-		strings.HasPrefix(installed, versionPrefix(target)) {
+	if requested == Latest || installed == target ||
+		strings.HasPrefix(target, installed) || strings.HasPrefix(installed, versionPrefix(target)) {
 		return installed, nil
 	}
 	return "", fmt.Errorf("installed Chrome is %s, but %s was requested", installed, target)

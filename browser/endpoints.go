@@ -7,7 +7,6 @@ type Endpoints struct {
 	ChromiumDash        string
 	GoogleLinux         string
 	GoogleChromeMac     string
-	CentOSMirror        string
 	ChromeDriverLegacy  string
 	ChromeForTesting    string
 	GeckodriverGitHub   string
@@ -23,7 +22,6 @@ func DefaultEndpoints() Endpoints {
 		ChromiumDash:        "https://chromiumdash.appspot.com",
 		GoogleLinux:         "https://dl.google.com/linux",
 		GoogleChromeMac:     "https://dl.google.com/chrome/mac",
-		CentOSMirror:        "http://mirror.centos.org",
 		ChromeDriverLegacy:  "https://chromedriver.storage.googleapis.com",
 		ChromeForTesting:    "https://googlechromelabs.github.io/chrome-for-testing",
 		GeckodriverGitHub:   "https://github.com/mozilla/geckodriver",

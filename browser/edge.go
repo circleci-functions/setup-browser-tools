@@ -93,7 +93,12 @@ func (i *Installer) installEdgeDebian(ctx context.Context, version string) error
 	}); err != nil {
 		return fmt.Errorf("dearmor the Microsoft signing key: %w", err)
 	}
-	if err := i.Runner.Exec(ctx, "cp", keyring, "/usr/share/keyrings/microsoft-archive-keyring.gpg"); err != nil {
+	const keyringPath = "/usr/share/keyrings/microsoft-archive-keyring.gpg"
+	if err := i.Runner.Exec(ctx, "cp", keyring, keyringPath); err != nil {
+		return err
+	}
+	// apt runs as the _apt user and silently ignores a keyring it cannot read.
+	if err := i.Runner.Exec(ctx, "chmod", "0644", keyringPath); err != nil {
 		return err
 	}
 
@@ -103,7 +108,11 @@ func (i *Installer) installEdgeDebian(ctx context.Context, version string) error
 	if err := writeFile(list, strings.NewReader(entry), 0o644); err != nil {
 		return err
 	}
-	if err := i.Runner.Exec(ctx, "cp", list, "/etc/apt/sources.list.d/microsoft-edge-stable.list"); err != nil {
+	const listPath = "/etc/apt/sources.list.d/microsoft-edge-stable.list"
+	if err := i.Runner.Exec(ctx, "cp", list, listPath); err != nil {
+		return err
+	}
+	if err := i.Runner.Exec(ctx, "chmod", "0644", listPath); err != nil {
 		return err
 	}
 

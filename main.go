@@ -16,6 +16,8 @@ import (
 )
 
 type cli struct {
+	InstallBrowserTools installBrowserToolsCmd `cmd:"" help:"Install a default set of browsers and drivers: Chrome, ChromeDriver, Firefox and geckodriver."`
+
 	InstallChrome       installChromeCmd       `cmd:"" help:"Install Google Chrome."`
 	InstallChromedriver installChromedriverCmd `cmd:"" help:"Install ChromeDriver, matching the installed Chrome."`
 	InstallFirefox      installFirefoxCmd      `cmd:"" help:"Install Mozilla Firefox."`
@@ -24,6 +26,65 @@ type cli struct {
 	InstallChromeForTesting installChromeForTestingCmd `cmd:"" help:"Install Chrome for Testing, and optionally its matching ChromeDriver."`
 	InstallEdge             installEdgeCmd             `cmd:"" help:"Install Microsoft Edge."`
 	InstallEdgeDriver       installEdgeDriverCmd       `cmd:"" help:"Install Edge WebDriver, matching the installed Edge."`
+}
+
+type installBrowserToolsCmd struct {
+	Chrome       bool `help:"Install Google Chrome." default:"true" negatable:""`
+	Chromedriver bool `help:"Install ChromeDriver." default:"true" negatable:""`
+	Firefox      bool `help:"Install Mozilla Firefox." default:"true" negatable:""`
+	Geckodriver  bool `help:"Install geckodriver." default:"true" negatable:""`
+
+	ChromeForTesting       bool `help:"Install Chrome for Testing." default:"false"`
+	ChromeForTestingDriver bool `help:"Install the Chrome for Testing ChromeDriver alongside Chrome for Testing." default:"false"`
+	Edge                   bool `help:"Install Microsoft Edge." default:"false"`
+	EdgeDriver             bool `help:"Install Edge WebDriver." default:"false"`
+
+	ChromeVersion          string `help:"Version of Chrome to install." default:"latest"`
+	ReplaceExistingChrome  bool   `help:"Replace an existing Chrome installation when it is a different version." default:"false"`
+	ChromedriverInstallDir string `help:"Directory to install ChromeDriver into." default:"/usr/local/bin"`
+
+	ChromeForTestingVersion    string `help:"Version of Chrome for Testing to install." default:"latest"`
+	ChromeForTestingInstallDir string `help:"Directory to symlink Chrome for Testing and its driver into." default:"/usr/local/bin"`
+
+	FirefoxVersion    string `help:"Version of Firefox to install." default:"latest"`
+	FirefoxInstallDir string `help:"Directory to install Firefox into." default:"/usr/local/bin"`
+
+	GeckodriverVersion    string `help:"Release tag of geckodriver to install." default:"latest"`
+	GeckodriverInstallDir string `help:"Directory to install geckodriver into." default:"/usr/local/bin"`
+
+	EdgeVersion          string `help:"Version of Edge to install." default:"latest"`
+	EdgeDriverInstallDir string `help:"Directory to install Edge WebDriver into." default:"/usr/local/bin"`
+}
+
+func (c *installBrowserToolsCmd) Run(ctx context.Context, client *sdk.Client, explicit browser.ExplicitFlags) error {
+	installer, err := browser.NewInstaller(client, os.Stderr)
+	if err != nil {
+		return err
+	}
+	return installer.InstallBrowserTools(ctx, browser.BrowserToolsOptions{
+		Chrome:                 c.Chrome,
+		ChromeDriver:           c.Chromedriver,
+		Firefox:                c.Firefox,
+		Geckodriver:            c.Geckodriver,
+		ChromeForTesting:       c.ChromeForTesting,
+		ChromeForTestingDriver: c.ChromeForTestingDriver,
+		Edge:                   c.Edge,
+		EdgeDriver:             c.EdgeDriver,
+
+		ChromeVersion:              c.ChromeVersion,
+		ReplaceExistingChrome:      c.ReplaceExistingChrome,
+		ChromeDriverInstallDir:     c.ChromedriverInstallDir,
+		ChromeForTestingVersion:    c.ChromeForTestingVersion,
+		ChromeForTestingInstallDir: c.ChromeForTestingInstallDir,
+		FirefoxVersion:             c.FirefoxVersion,
+		FirefoxInstallDir:          c.FirefoxInstallDir,
+		GeckodriverVersion:         c.GeckodriverVersion,
+		GeckodriverInstallDir:      c.GeckodriverInstallDir,
+		EdgeVersion:                c.EdgeVersion,
+		EdgeDriverInstallDir:       c.EdgeDriverInstallDir,
+
+		Explicit: explicit,
+	})
 }
 
 type installChromeCmd struct {
@@ -99,7 +160,7 @@ func (c *installFirefoxCmd) Run(ctx context.Context, client *sdk.Client) error {
 type installChromeForTestingCmd struct {
 	Version      string `help:"Version of Chrome for Testing to install. Defaults to the latest stable release." default:"latest"`
 	InstallDir   string `help:"Directory to symlink Chrome for Testing and its driver into." default:"/usr/local/bin"`
-	ChromeDriver bool   `help:"Also install the matching Chrome for Testing ChromeDriver." default:"true" negatable:""`
+	Chromedriver bool   `help:"Also install the matching Chrome for Testing ChromeDriver." default:"true" negatable:""`
 }
 
 func (c *installChromeForTestingCmd) Run(ctx context.Context, client *sdk.Client) error {
@@ -110,7 +171,7 @@ func (c *installChromeForTestingCmd) Run(ctx context.Context, client *sdk.Client
 	return installer.InstallChromeForTesting(ctx, browser.ChromeForTestingOptions{
 		Version:      c.Version,
 		InstallDir:   c.InstallDir,
-		ChromeDriver: c.ChromeDriver,
+		ChromeDriver: c.Chromedriver,
 	})
 }
 
@@ -152,5 +213,21 @@ func run(ctx context.Context, client *sdk.Client) error {
 	)
 	kCtx.BindTo(ctx, (*context.Context)(nil))
 	kCtx.Bind(client)
+	kCtx.Bind(explicitFlags(kCtx))
 	return kCtx.Run(ctx)
+}
+
+// explicitFlags returns the flags that appeared in argv, including the negated
+// --no-x forms. kong.Value.Set cannot be used for this: Value.ApplyDefault sets
+// it too, so it is true for defaulted flags as well. Path only gains a flag entry
+// when one is actually parsed, and Resolved marks the ones a resolver supplied
+// rather than the command line.
+func explicitFlags(kCtx *kong.Context) browser.ExplicitFlags {
+	out := browser.ExplicitFlags{}
+	for _, p := range kCtx.Path {
+		if p.Flag != nil && !p.Resolved {
+			out[p.Flag.Name] = true
+		}
+	}
+	return out
 }

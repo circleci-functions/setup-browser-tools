@@ -7,6 +7,20 @@ executors:
   go:
     docker:
       - image: cimg/go:1.26
+  # The install jobs exec the binary `build` cross-compiled, so they run on bare
+  # images rather than language-preinstalled ones.
+  debian:
+    docker:
+      - image: cimg/base:current
+  alpine:
+    docker:
+      - image: alpine:3.21
+  rhel:
+    docker:
+      - image: rockylinux:9
+  macos:
+    macos:
+      xcode: 16.2.0
 
 jobs:
   test:
@@ -44,6 +58,163 @@ jobs:
           paths:
             - dist
 
+  # Real installs against real images. Nothing else in this repo executes an
+  # install: the unit tests assert against the same reading of the orb that let
+  # its own missing-else branches survive, so this is the only thing that can
+  # catch "exited 0, installed nothing".
+  #
+  # Every row asserts the installed binary reports a version. An exit code alone
+  # is not evidence.
+  install-debian-chrome:
+    executor: debian
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: install-chrome
+          command: ./dist/setup-browser-tools/linux/amd64/setup-browser-tools install-chrome
+      - run:
+          name: Assert Chrome reports a version
+          command: |
+            google-chrome --version
+            google-chrome --version | grep -E '[0-9]+\.[0-9]+\.[0-9]+'
+
+  install-alpine-chrome:
+    executor: alpine
+    steps:
+      - run: apk add --no-cache bash git curl
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: install-chrome resolves to Chromium on Alpine
+          command: ./dist/setup-browser-tools/linux/amd64/setup-browser-tools install-chrome
+      - run:
+          name: Assert Chromium reports a version
+          command: |
+            chromium-browser --version
+            chromium-browser --version | grep -E '[0-9]+\.[0-9]+\.[0-9]+'
+
+  install-debian-default-set:
+    executor: debian
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: install-browser-tools
+          command: ./dist/setup-browser-tools/linux/amd64/setup-browser-tools install-browser-tools
+      - run:
+          name: Assert all four binaries respond
+          command: |
+            google-chrome --version
+            chromedriver --version
+            firefox --version
+            geckodriver --version
+
+  # The warn-and-skip path. Firefox is on by default and unsupported here, so
+  # this must exit 0 having installed everything else and said why it skipped
+  # Firefox. geckodriver's linux64 build does run on Alpine — verified here
+  # rather than assumed.
+  install-alpine-default-set:
+    executor: alpine
+    steps:
+      - run: apk add --no-cache bash git curl
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: install-browser-tools skips what Alpine cannot support
+          command: |
+            ./dist/setup-browser-tools/linux/amd64/setup-browser-tools install-browser-tools 2>&1 | tee /tmp/alpine.log
+      - run:
+          name: Assert it warned rather than failed
+          command: |
+            grep -q "skipping Firefox" /tmp/alpine.log
+      - run:
+          name: Assert everything Alpine does support still works
+          command: |
+            chromium-browser --version
+            chromedriver --version
+            geckodriver --version
+
+  # Explicitly asking for an unsupported component must fail, unlike the row
+  # above where the same component was only on by default.
+  install-alpine-explicit-firefox-fails:
+    executor: alpine
+    steps:
+      - run: apk add --no-cache bash git curl
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: An explicit --firefox on Alpine must fail
+          command: |
+            if ./dist/setup-browser-tools/linux/amd64/setup-browser-tools install-browser-tools \
+                 --firefox --no-chrome --no-chromedriver --no-geckodriver; then
+              echo "FAIL: an explicitly requested Firefox should not have succeeded on Alpine" >&2
+              exit 1
+            fi
+
+  install-rhel-chrome:
+    executor: rhel
+    steps:
+      - run: dnf install -y git tar gzip which
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: install-chrome via yum
+          command: ./dist/setup-browser-tools/linux/amd64/setup-browser-tools install-chrome
+      - run:
+          name: Assert Chrome reports a version
+          command: google-chrome --version | grep -E '[0-9]+\.[0-9]+\.[0-9]+'
+
+  install-macos-chrome:
+    executor: macos
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: install-chrome then install-chromedriver
+          command: |
+            BIN=./dist/setup-browser-tools/darwin/arm64/setup-browser-tools
+            "$BIN" install-chrome
+            "$BIN" install-chromedriver
+      - run:
+          name: Assert both report versions
+          command: |
+            google-chrome --version
+            chromedriver --version
+
+  install-debian-opt-in-set:
+    executor: debian
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: install-edge then install-edge-driver
+          command: |
+            BIN=./dist/setup-browser-tools/linux/amd64/setup-browser-tools
+            "$BIN" install-edge
+            "$BIN" install-edge-driver
+      - run:
+          name: Assert Edge and its driver report versions
+          command: |
+            microsoft-edge --version
+            msedgedriver --version
+      - run:
+          name: install-chrome-for-testing with its driver
+          command: ./dist/setup-browser-tools/linux/amd64/setup-browser-tools install-chrome-for-testing
+      - run:
+          name: Assert Chrome for Testing and its driver report versions
+          command: |
+            chrome --version
+            chromedriver --version
+
   publish:
     executor: go
     steps:
@@ -77,8 +248,46 @@ workflows:
           filters:
             tags:
               only: /.*/
+      # install-debian-chrome and install-alpine-chrome gate publish: they cover
+      # the path with a real internal caller and the Chromium-on-musl path
+      # respectively. Promoted after the whole matrix went green in a full run.
+      #
+      # The remaining rows run and report but do not gate, so a flaky upstream
+      # mirror cannot block a release. CircleCI has no per-job advisory status, so
+      # a failure there still shows red on a PR; making these two *required* for
+      # merge is a branch-protection setting, not something this config expresses.
+      - install-debian-chrome:
+          requires: [build]
+          context: [github-readonly]
+          filters:
+            tags:
+              only: /.*/
+      - install-alpine-chrome:
+          requires: [build]
+          context: [github-readonly]
+          filters:
+            tags:
+              only: /.*/
+      - install-debian-default-set:
+          requires: [build]
+          context: [github-readonly]
+      - install-alpine-default-set:
+          requires: [build]
+          context: [github-readonly]
+      - install-alpine-explicit-firefox-fails:
+          requires: [build]
+          context: [github-readonly]
+      - install-rhel-chrome:
+          requires: [build]
+          context: [github-readonly]
+      - install-macos-chrome:
+          requires: [build]
+          context: [github-readonly]
+      - install-debian-opt-in-set:
+          requires: [build]
+          context: [github-readonly]
       - publish:
-          requires: [test, build]
+          requires: [test, build, install-debian-chrome, install-alpine-chrome]
           context: [functions-publisher, github-readonly]
           filters:
             tags:
