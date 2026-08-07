@@ -80,7 +80,7 @@ func TestVerifySums(t *testing.T) {
 			case tc.wantNotFound:
 				var target *ErrNotInManifest
 				assert.Assert(t, errors.As(err, &target), "got %v", err)
-				assert.Equal(t, target.Filename, tc.filename)
+				assert.Equal(t, target.Entry, tc.filename)
 			case tc.wantErrContains != "":
 				assert.Assert(t, err != nil)
 				assert.Assert(t, strings.Contains(err.Error(), tc.wantErrContains),

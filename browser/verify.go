@@ -20,12 +20,13 @@ const (
 )
 
 type ErrNotInManifest struct {
-	Filename string
+	// Entry is the manifest key that was looked for.
+	Entry    string
 	Manifest string
 }
 
 func (e *ErrNotInManifest) Error() string {
-	return fmt.Sprintf("%s has no entry for %s", e.Manifest, e.Filename)
+	return fmt.Sprintf("%s has no entry for %s", e.Manifest, e.Entry)
 }
 
 // VerifySums checks path against the digest recorded for entry in a SHA256SUMS or
@@ -97,7 +98,7 @@ func digestFromManifest(manifestPath, entry string) (string, error) {
 		return "", fmt.Errorf("read %s: %w", manifestPath, err)
 	}
 
-	return "", &ErrNotInManifest{Filename: entry, Manifest: filepath.Base(manifestPath)}
+	return "", &ErrNotInManifest{Entry: entry, Manifest: filepath.Base(manifestPath)}
 }
 
 func parseSumsLine(line string) (digest, name string, ok bool) {
