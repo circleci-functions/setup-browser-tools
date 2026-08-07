@@ -274,6 +274,11 @@ func (i *Installer) installFirefoxLinux(ctx context.Context, dir, archive, versi
 	if err := i.Runner.Exec(ctx, "cp", "-R", filepath.Join(extracted, "firefox"), versioned); err != nil {
 		return err
 	}
+	// The tree is copied in as root and then run by the job user, so it has to be
+	// traversable regardless of the modes it arrived with.
+	if err := i.Runner.Exec(ctx, "chmod", "-R", "a+rX", versioned); err != nil {
+		return err
+	}
 	if err := i.Runner.Exec(ctx, "chmod", "+x", filepath.Join(versioned, "firefox")); err != nil {
 		return err
 	}

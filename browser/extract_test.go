@@ -256,3 +256,17 @@ func TestSafeJoin(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractCreatesTraversableDirectories(t *testing.T) {
+	// An extracted tree is copied into a system directory as root and then run by
+	// the job user. A group-only directory mode leaves the binary unreachable,
+	// which surfaces as "command not found" — it cost two rounds of the install
+	// matrix to find, once for Chrome for Testing and once for Firefox.
+	dest := t.TempDir()
+	assert.NilError(t, Extract(filepath.Join("testdata", "archive.zip"), dest))
+
+	info, err := os.Stat(filepath.Join(dest, "nested"))
+	assert.NilError(t, err)
+	assert.Equal(t, info.Mode().Perm()&0o055, os.FileMode(0o055),
+		"extracted directories must be readable and traversable by others, got %v", info.Mode().Perm())
+}

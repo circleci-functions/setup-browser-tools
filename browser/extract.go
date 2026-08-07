@@ -193,8 +193,12 @@ func mustRel(base, target string) string {
 	return rel
 }
 
+// mkdirAll creates dir traversable by everyone. An extracted browser tree is
+// copied into a system directory as root and then run by the job user, so a
+// group-only mode leaves the binary unreachable — which a shell reports as
+// "command not found" rather than as a permissions problem.
 func mkdirAll(dir string) error {
-	if err := os.MkdirAll(dir, 0o750); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec // extracted trees must be traversable by the job user
 		return fmt.Errorf("create %s: %w", dir, err)
 	}
 	return nil
