@@ -19,6 +19,10 @@ type Installer struct {
 	Cache     Cache
 	Endpoints Endpoints
 	Out       io.Writer
+
+	// componentsOverride replaces the aggregate's component list. Tests set it to
+	// exercise the unsupported-platform policy without installing anything.
+	componentsOverride func(BrowserToolsOptions) []component
 }
 
 // NewInstaller detects the host and wires the collaborators together. client may
