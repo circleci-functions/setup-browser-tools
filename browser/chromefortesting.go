@@ -124,13 +124,30 @@ func (i *Installer) installChromeForTestingBrowser(ctx context.Context, dir, ver
 	if err := i.Runner.Exec(ctx, "cp", "-R", unpacked, chromeForTestingTree); err != nil {
 		return err
 	}
+	// The tree is extracted as the job user and then copied in as root, which
+	// leaves it owned by root with the extractor's own directory mode. Without
+	// this the job user cannot traverse it, and a symlink into it fails to
+	// resolve — which a shell reports as "command not found" rather than as a
+	// permissions problem.
+	if err := i.Runner.Exec(ctx, "chmod", "-R", "a+rX", chromeForTestingTree); err != nil {
+		return err
+	}
+
 	if err := i.Runner.Exec(ctx, "ln", "-sf",
 		filepath.Join(chromeForTestingTree, "chrome"), filepath.Join(installDir, "chrome")); err != nil {
 		return err
 	}
 
 	if i.Platform.Distro == DistroDebian {
-		return i.satisfyChromeForTestingDeps(ctx, unpacked)
+		if err := i.satisfyChromeForTestingDeps(ctx, unpacked); err != nil {
+			return err
+		}
+	}
+
+	// The driver was verified but the browser never was, so a tree that copied
+	// into place unusable still reported success.
+	if _, err := i.Runner.Output(ctx, filepath.Join(installDir, "chrome"), "--version"); err != nil {
+		return fmt.Errorf("Chrome for Testing %s did not run after installing: %w", version, err) //nolint:staticcheck // proper noun
 	}
 	return nil
 }

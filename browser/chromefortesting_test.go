@@ -169,3 +169,35 @@ func TestInstallChromeForTestingRejectsUnresolvableVersion(t *testing.T) {
 	assert.Assert(t, err != nil)
 	assert.Assert(t, strings.Contains(err.Error(), "CFT_NOT_SET"))
 }
+
+func TestInstallChromeForTestingMakesTheTreeTraversable(t *testing.T) {
+	// The tree is extracted as the job user and copied in as root, so without
+	// widening the mode the job user cannot traverse it — and a symlink into it
+	// fails to resolve, which a shell reports as "command not found".
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		zip, err := os.ReadFile(filepath.Join("testdata", "archive.zip"))
+		assert.NilError(t, err)
+		_, _ = w.Write(zip)
+	}))
+	defer srv.Close()
+
+	i, calls := testInstaller(t, installerOpts{distro: DistroMacOS, arch: ArchARM64})
+	i.Endpoints.ChromeForTestingCDN = srv.URL
+	i.Fetcher = Fetcher{HTTPClient: srv.Client()}
+
+	// The copy will fail against the fixture archive's layout; the assertion is
+	// about the mode fix being issued at all.
+	_ = i.installChromeForTestingBrowser(context.Background(), t.TempDir(), "147.0.7727.55", "mac-arm64", "/usr/local/bin")
+
+	var found bool
+	for _, c := range *calls {
+		if c.name == "chmod" && len(c.args) >= 2 && c.args[0] == "-R" && c.args[1] == "a+rX" {
+			found = true
+		}
+	}
+	assert.Assert(t, found, "the installed tree was never made traversable: %+v", *calls)
+}
