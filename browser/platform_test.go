@@ -10,7 +10,6 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// fakePath returns a LookPath that succeeds only for the named executables.
 func fakePath(present ...string) func(string) (string, error) {
 	set := make(map[string]bool, len(present))
 	for _, name := range present {
@@ -24,8 +23,6 @@ func fakePath(present ...string) func(string) (string, error) {
 	}
 }
 
-// issueRoot returns a filesystem root whose etc/issue holds contents. An empty
-// contents means no etc/issue at all.
 func issueRoot(t *testing.T, contents string) string {
 	t.Helper()
 	root := t.TempDir()

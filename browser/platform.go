@@ -11,8 +11,8 @@ import (
 	"strings"
 )
 
-// Distro identifies the package-management family of a host, which is what
-// determines how a browser is installed.
+// Distro identifies a host's package-management family, which is what decides
+// how a browser gets installed.
 type Distro string
 
 const (
@@ -22,38 +22,32 @@ const (
 	DistroDebian Distro = "debian"
 )
 
-// Architecture values, as reported by Platform.Arch.
 const (
 	ArchAMD64 = "amd64"
 	ArchARM64 = "arm64"
 )
 
-// Platform describes the host a browser is being installed onto.
 type Platform struct {
 	Distro Distro
 	Arch   string
 }
 
-// IsMacOS reports whether p is macOS.
 func (p Platform) IsMacOS() bool { return p.Distro == DistroMacOS }
 
-// IsLinuxARM64 reports whether p is 64-bit ARM Linux, which several browser
-// vendors publish no build for.
+// IsLinuxARM64 reports whether p is 64-bit ARM Linux, for which several browser
+// vendors publish no build at all.
 func (p Platform) IsLinuxARM64() bool {
 	return p.Distro != DistroMacOS && p.Arch == ArchARM64
 }
 
-// String returns the distro and architecture, e.g. "debian/amd64".
+// String returns e.g. "debian/amd64".
 func (p Platform) String() string { return string(p.Distro) + "/" + p.Arch }
 
-// ErrUnknownPlatform is returned by Detect when the host matches none of the
-// supported package-management families.
 var ErrUnknownPlatform = errors.New("unrecognised platform: not macOS, and no apk, yum or apt-get found")
 
-// UnsupportedError reports that a component has no installation path on a
-// platform. It is returned rather than a plain error so that callers installing
-// a set of components can tell an unsupported platform apart from a genuine
-// failure and decide whether to skip or fail.
+// UnsupportedError is a distinct type so that a caller installing a set of
+// components can tell "no install path exists here" apart from a genuine
+// failure, and skip rather than abort.
 type UnsupportedError struct {
 	Component string
 	Platform  Platform
@@ -68,33 +62,24 @@ func (e *UnsupportedError) Error() string {
 	return msg
 }
 
-// Unsupported returns an UnsupportedError for component on p. reason may be
-// empty.
 func Unsupported(component string, p Platform, reason string) error {
 	return &UnsupportedError{Component: component, Platform: p, Reason: reason}
 }
 
-// IsUnsupported reports whether err is or wraps an UnsupportedError.
 func IsUnsupported(err error) bool {
 	var target *UnsupportedError
 	return errors.As(err, &target)
 }
 
-// Host supplies the environment facts that Detect and ResolvePrivilege read.
-// A zero Host reads the real machine; tests set the fields to describe a
+// Host supplies the environment facts Detect and ResolvePrivilege read. The
+// zero value reads the real machine; tests fill the fields to describe a
 // synthetic one.
 type Host struct {
-	// GOOS defaults to runtime.GOOS.
-	GOOS string
-	// GOARCH defaults to runtime.GOARCH.
-	GOARCH string
-	// Root is the filesystem root under which /etc/issue is read. Defaults
-	// to "/".
-	Root string
-	// LookPath defaults to exec.LookPath.
+	GOOS     string
+	GOARCH   string
+	Root     string
 	LookPath func(string) (string, error)
-	// Geteuid defaults to os.Geteuid.
-	Geteuid func() int
+	Geteuid  func() int
 }
 
 func (h Host) goos() string {
@@ -122,7 +107,7 @@ func (h Host) lookPath(name string) (string, error) {
 	if h.LookPath != nil {
 		return h.LookPath(name)
 	}
-	return exec.LookPath(name) //nolint:wrapcheck // returned as-is; callers only test for nil
+	return exec.LookPath(name) //nolint:wrapcheck // callers only test for nil
 }
 
 func (h Host) geteuid() int {
@@ -137,9 +122,10 @@ func (h Host) has(name string) bool {
 	return err == nil
 }
 
-// Detect classifies the host. Families are tested in the order macOS, Alpine,
-// RHEL, Debian, so a host with both yum and apt-get is treated as RHEL, and
-// returns ErrUnknownPlatform when none match.
+// Detect classifies the host, testing families in the order macOS, Alpine,
+// RHEL, Debian, so a host carrying both yum and apt-get resolves as RHEL. Where
+// the orb falls through to apt-get for any unrecognised Linux, this returns
+// ErrUnknownPlatform.
 func Detect(h Host) (Platform, error) {
 	arch := h.goarch()
 
@@ -159,8 +145,6 @@ func Detect(h Host) (Platform, error) {
 	return Platform{}, ErrUnknownPlatform
 }
 
-// isAlpine reports whether /etc/issue names Alpine, which is how Alpine is
-// distinguished from other Linux distributions.
 func (h Host) isAlpine() bool {
 	issue, err := os.ReadFile(filepath.Join(h.root(), "etc", "issue"))
 	if err != nil {
@@ -169,18 +153,15 @@ func (h Host) isAlpine() bool {
 	return strings.Contains(string(issue), "Alpine")
 }
 
-// Privilege knows whether commands that write to system directories need a
-// sudo prefix.
 type Privilege struct {
 	root     bool
 	haveSudo bool
 }
 
-// ResolvePrivilege decides once how privileged commands must be invoked:
-// unprefixed when already root, prefixed with sudo when not root and sudo is
-// on PATH. When neither holds, commands run unprefixed and Escalated reports
-// false, so callers can explain a permission failure rather than emitting a
-// sudo invocation that cannot work.
+// ResolvePrivilege decides once how privileged commands are invoked. Unlike the
+// orb's per-script `if [[ $EUID == 0 ]]`, sudo is used only when it is both
+// needed and actually installed, so a root container without sudo never gets an
+// invocation it cannot run.
 func ResolvePrivilege(h Host) Privilege {
 	if h.geteuid() == 0 {
 		return Privilege{root: true, haveSudo: false}
@@ -188,17 +169,11 @@ func ResolvePrivilege(h Host) Privilege {
 	return Privilege{root: false, haveSudo: h.has("sudo")}
 }
 
-// Escalated reports whether privileged commands can actually succeed, i.e. the
-// process is root or sudo is available.
+// Escalated reports whether privileged commands can actually succeed.
 func (p Privilege) Escalated() bool { return p.root || p.haveSudo }
 
-// NeedsSudo reports whether commands are prefixed with sudo.
 func (p Privilege) NeedsSudo() bool { return !p.root && p.haveSudo }
 
-// Command returns the name and arguments to execute in order to run name with
-// args as root. As root, or when sudo is unavailable, it returns them
-// unchanged; otherwise it prepends sudo. It never returns a bare "sudo" that
-// is not on PATH.
 func (p Privilege) Command(name string, args ...string) (string, []string) {
 	if !p.NeedsSudo() {
 		return name, args

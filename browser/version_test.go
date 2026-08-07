@@ -21,10 +21,9 @@ func TestExpandVersion(t *testing.T) {
 	}
 
 	tests := []struct {
-		name string
-		in   string
-		want string
-		// wantErrContains, when non-empty, is required to appear in the error.
+		name            string
+		in              string
+		want            string
 		wantErrContains []string
 	}{
 		{

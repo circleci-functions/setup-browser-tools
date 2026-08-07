@@ -6,27 +6,24 @@ import (
 	"strings"
 )
 
-// Latest is the version value meaning "resolve the newest release available".
 const Latest = "latest"
 
-// Lookup reports the value of an environment variable and whether it is set,
-// with the same contract as os.LookupEnv.
+// Lookup has the same contract as os.LookupEnv.
 type Lookup func(name string) (string, bool)
 
-// OSLookup reads from the process environment.
 func OSLookup(name string) (string, bool) { return os.LookupEnv(name) }
 
-// ExpandVersion substitutes environment-variable references in a version
-// string, so a caller can pass a version through a variable rather than
-// hard-coding it. flag names the flag the value came from and appears in error
-// messages.
+// ExpandVersion substitutes $NAME and ${NAME} in a version string, so a caller
+// can pass a version through an environment variable. flag names the flag the
+// value came from, for error messages.
 //
-// $NAME and ${NAME} are expanded, where NAME starts with a letter or underscore
-// and continues with letters, digits or underscores. A reference to a variable
-// that is unset, or set to the empty string, is an error rather than an empty
-// expansion, because an empty version would otherwise be built into a download
-// URL and fail much further on. A '$' that begins no valid reference is left
-// alone, so "$$" and "147$" pass through unchanged.
+// A reference to a variable that is unset, or set to empty, is an error rather
+// than an empty expansion. This is why os.Expand is unusable here: its mapping
+// function cannot report failure, so a mistyped $CHROME_VERSON would become ""
+// and get built into a download URL.
+//
+// A '$' beginning no valid reference is left alone, so "$$" and "147$" pass
+// through unchanged.
 func ExpandVersion(value, flag string, lookup Lookup) (string, error) {
 	if !strings.Contains(value, "$") {
 		return value, nil
@@ -68,11 +65,10 @@ func ExpandVersion(value, flag string, lookup Lookup) (string, error) {
 	return b.String(), nil
 }
 
-// parseRef reads the variable reference starting at the '$' at index i. It
-// returns the variable name and the index just past the reference. ok is false
-// when i begins no valid reference, in which case the '$' is a literal. An
-// error is returned only for a '${' that is never closed, which is a typo
-// rather than a literal.
+// parseRef reads the reference starting at the '$' at index i, returning the
+// name and the index just past it. ok is false when i begins no valid
+// reference, making the '$' a literal. An unclosed "${" errors instead, being a
+// typo rather than plausible literal text.
 func parseRef(value string, i int, flag string) (name string, next int, ok bool, err error) {
 	rest := value[i+1:]
 
@@ -98,7 +94,6 @@ func parseRef(value string, i int, flag string) (name string, next int, ok bool,
 	return rest[:end], i + 1 + end, true, nil
 }
 
-// isVarName reports whether s is a valid environment-variable name.
 func isVarName(s string) bool {
 	if s == "" {
 		return false
@@ -111,8 +106,6 @@ func isVarName(s string) bool {
 	return true
 }
 
-// isNameByte reports whether c may appear in a variable name, where first
-// indicates c is the leading byte and so may not be a digit.
 func isNameByte(c byte, first bool) bool {
 	switch {
 	case c >= 'A' && c <= 'Z', c >= 'a' && c <= 'z', c == '_':

@@ -1,9 +1,5 @@
 // Command setup-browser-tools installs browsers and browser-testing tools into
-// a CircleCI job: Google Chrome, Chrome for Testing, ChromeDriver, Microsoft
-// Edge and its WebDriver, Firefox, and geckodriver. Each is a subcommand, and
-// install-browser-tools installs a default set in one step.
-//
-// Supported platforms: macOS, Debian/Ubuntu, Alpine and RHEL/CentOS Linux.
+// a CircleCI job, on macOS, Debian/Ubuntu, Alpine and RHEL/CentOS Linux.
 // Coverage varies by browser; see README.md for the matrix.
 package main
 

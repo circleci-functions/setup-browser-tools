@@ -13,15 +13,12 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// invocation is one command an Executor was asked to run.
 type invocation struct {
 	name string
 	args []string
 	env  []string
 }
 
-// recorder is an Executor that records what it was asked to run and fails the
-// first failures attempts.
 type recorder struct {
 	calls    []invocation
 	failures int
@@ -40,7 +37,6 @@ func (rec *recorder) exec(_ context.Context, name string, args, env []string, ou
 	return rec.stdout, nil
 }
 
-// names returns the command name of each recorded call.
 func (rec *recorder) names() []string {
 	out := make([]string, 0, len(rec.calls))
 	for _, c := range rec.calls {
@@ -49,7 +45,6 @@ func (rec *recorder) names() []string {
 	return out
 }
 
-// sudoPrivilege returns a Privilege that prefixes sudo.
 func sudoPrivilege() Privilege {
 	return ResolvePrivilege(Host{
 		Geteuid:  func() int { return 1000 },
@@ -57,7 +52,6 @@ func sudoPrivilege() Privilege {
 	})
 }
 
-// rootPrivilege returns a Privilege for a root process.
 func rootPrivilege() Privilege {
 	return ResolvePrivilege(Host{Geteuid: func() int { return 0 }})
 }
