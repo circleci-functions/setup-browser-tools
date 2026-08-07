@@ -16,7 +16,8 @@ import (
 )
 
 type cli struct {
-	InstallChrome installChromeCmd `cmd:"" help:"Install Google Chrome."`
+	InstallChrome       installChromeCmd       `cmd:"" help:"Install Google Chrome."`
+	InstallChromedriver installChromedriverCmd `cmd:"" help:"Install ChromeDriver, matching the installed Chrome."`
 }
 
 type installChromeCmd struct {
@@ -39,6 +40,18 @@ func (c *installChromeCmd) Run(ctx context.Context, client *sdk.Client) error {
 		UseCache:        c.UseCache,
 		CacheKey:        c.CacheKey,
 	})
+}
+
+type installChromedriverCmd struct {
+	InstallDir string `help:"Directory to install ChromeDriver into. Not honoured on Alpine, where the package manager chooses." default:"/usr/local/bin"`
+}
+
+func (c *installChromedriverCmd) Run(ctx context.Context, client *sdk.Client) error {
+	installer, err := browser.NewInstaller(client, os.Stderr)
+	if err != nil {
+		return err
+	}
+	return installer.InstallChromeDriver(ctx, browser.ChromeDriverOptions{InstallDir: c.InstallDir})
 }
 
 func main() {
