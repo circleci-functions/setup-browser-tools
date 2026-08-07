@@ -1,0 +1,21 @@
+version: 2.1
+
+# Bootstrap config. Deliberately minimal: no orbs, no contexts, no caching and no
+# private module access, so that a failure here means the project itself is not
+# wired up rather than something incidental. The real lint/test/build/publish
+# config replaces this in the PR that adds the function.
+
+jobs:
+  bootstrap:
+    docker:
+      - image: cimg/go:1.26
+    steps:
+      - checkout
+      - run:
+          name: Print Go version
+          command: go version
+
+workflows:
+  bootstrap:
+    jobs:
+      - bootstrap
