@@ -10,6 +10,7 @@ type Endpoints struct {
 	CentOSMirror       string
 	ChromeDriverLegacy string
 	ChromeForTesting   string
+	GeckodriverGitHub  string
 }
 
 func DefaultEndpoints() Endpoints {
@@ -20,5 +21,6 @@ func DefaultEndpoints() Endpoints {
 		CentOSMirror:       "http://mirror.centos.org",
 		ChromeDriverLegacy: "https://chromedriver.storage.googleapis.com",
 		ChromeForTesting:   "https://googlechromelabs.github.io/chrome-for-testing",
+		GeckodriverGitHub:  "https://github.com/mozilla/geckodriver",
 	}
 }

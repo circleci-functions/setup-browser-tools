@@ -18,6 +18,7 @@ import (
 type cli struct {
 	InstallChrome       installChromeCmd       `cmd:"" help:"Install Google Chrome."`
 	InstallChromedriver installChromedriverCmd `cmd:"" help:"Install ChromeDriver, matching the installed Chrome."`
+	InstallGeckodriver  installGeckodriverCmd  `cmd:"" help:"Install geckodriver, Mozilla's WebDriver proxy for Firefox."`
 }
 
 type installChromeCmd struct {
@@ -52,6 +53,22 @@ func (c *installChromedriverCmd) Run(ctx context.Context, client *sdk.Client) er
 		return err
 	}
 	return installer.InstallChromeDriver(ctx, browser.ChromeDriverOptions{InstallDir: c.InstallDir})
+}
+
+type installGeckodriverCmd struct {
+	Version    string `help:"Release tag of geckodriver to install, e.g. v0.36.0. Defaults to the latest release." default:"latest"`
+	InstallDir string `help:"Directory to install geckodriver into." default:"/usr/local/bin"`
+}
+
+func (c *installGeckodriverCmd) Run(ctx context.Context, client *sdk.Client) error {
+	installer, err := browser.NewInstaller(client, os.Stderr)
+	if err != nil {
+		return err
+	}
+	return installer.InstallGeckodriver(ctx, browser.GeckodriverOptions{
+		Version:    c.Version,
+		InstallDir: c.InstallDir,
+	})
 }
 
 func main() {
