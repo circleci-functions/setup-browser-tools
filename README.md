@@ -5,8 +5,11 @@ Installs browsers and browser-testing tools into a CircleCI job: Google Chrome, 
 Invoked via:
 
 ```
-circleci run setup-browser-tools@<version> <subcommand> [flags]
+circleci run github.com/circleci-functions/setup-browser-tools@<version> -- <subcommand> [flags]
 ```
+
+The full `github.com/` path and the `--` separator are both required. A bare
+`setup-browser-tools@<version>` does not resolve.
 
 ## Capabilities
 
@@ -137,7 +140,7 @@ There is no timeout flag. Set `no_output_timeout` on the step that runs the func
 ```yaml
 - run:
     name: Install Chrome
-    command: circleci run setup-browser-tools@<version> install-chrome
+    command: circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-chrome
     no_output_timeout: 5m
 ```
 
@@ -157,30 +160,30 @@ jobs:
       - image: cimg/base:current
     steps:
       # Chrome, ChromeDriver, Firefox and geckodriver
-      - run: circleci run setup-browser-tools@<version> install-browser-tools
+      - run: circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-browser-tools
 
       # Chrome only
-      - run: circleci run setup-browser-tools@<version> install-chrome
+      - run: circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-chrome
 
       # Pinned versions
       - run: |
-          circleci run setup-browser-tools@<version> install-browser-tools \
+          circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-browser-tools \
             --chrome-version 147.0.7727.55 \
             --firefox-version 149.0.2
 
       # Swap Firefox and geckodriver for Edge and its driver
       - run: |
-          circleci run setup-browser-tools@<version> install-browser-tools \
+          circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-browser-tools \
             --no-firefox --no-geckodriver --edge --edge-driver
 
       # Chrome from the beta channel, with the download cached
       - run: |
-          circleci run setup-browser-tools@<version> install-chrome \
+          circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-chrome \
             --channel beta --use-cache --cache-key v2
 
       # Chrome for Testing and its driver, into a chosen directory
       - run: |
-          circleci run setup-browser-tools@<version> install-chrome-for-testing \
+          circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-chrome-for-testing \
             --version 147.0.7727.55 --install-dir /home/circleci/bin
 ```
 

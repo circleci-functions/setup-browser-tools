@@ -207,7 +207,7 @@ func run(ctx context.Context, client *sdk.Client) error {
 	var flags cli
 	kCtx := kong.Parse(&flags,
 		kong.Name("setup-browser-tools"),
-		kong.Description("Install browsers and browser-testing tools.\n\nExample:\n  circleci run setup-browser-tools@<version> install-chrome --version latest"),
+		kong.Description("Install browsers and browser-testing tools.\n\nExample:\n  circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-chrome --version latest"),
 		kong.UsageOnError(),
 		functionyaml.Embed(),
 	)
