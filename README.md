@@ -17,7 +17,7 @@ The full `github.com/` path and the `--` separator are both required. A bare
 - **Installs individually**, so a job can take only what it needs
 - **Pins versions**, or resolves the latest release from the vendor
 - **Verifies downloads**: SHA-256/512 checksums for Firefox, plus OpenPGP signature verification of the checksum manifest
-- **Caches installers** for Chrome and Firefox via the CircleCI job cache, for when downloads are unreliable
+- **Caches** the Firefox installer, and the installed Chrome on Debian/Ubuntu and RHEL, via the CircleCI job cache, for when downloads are unreliable
 - **Records what it installed** in `$HOME/.browser-versions`, one line per browser
 - Reads a version from an environment variable, so `--version "$CHROME_VERSION"` works
 
@@ -52,7 +52,7 @@ The full `github.com/` path and the `--` separator are both required. A bare
 | `--replace-existing-chrome` | bool | `false` | Replace an existing Chrome when it is a different version |
 | `--chromedriver-install-dir` | string | `/usr/local/bin` | Directory to install ChromeDriver into |
 | `--chrome-for-testing-version` | string | `latest` | Version of Chrome for Testing to install |
-| `--chrome-for-testing-install-dir` | string | `/usr/local/bin` | Directory to symlink Chrome for Testing and its driver into |
+| `--chrome-for-testing-install-dir` | string | `/usr/local/bin` | Directory to symlink Chrome for Testing into and copy its driver into |
 | `--firefox-version` | string | `latest` | Version of Firefox to install |
 | `--firefox-install-dir` | string | `/usr/local/bin` | Directory to install Firefox into |
 | `--geckodriver-version` | string | `latest` | Release tag of geckodriver to install |
@@ -97,7 +97,7 @@ The full `github.com/` path and the `--` separator are both required. A bare
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--version` | string | `latest` | Version to install |
-| `--install-dir` | string | `/usr/local/bin` | Directory to symlink Chrome and its driver into |
+| `--install-dir` | string | `/usr/local/bin` | Directory to symlink Chrome into and copy its driver into |
 | `--chromedriver` / `--no-chromedriver` | bool | `true` | Also install the matching ChromeDriver |
 
 ### `install-edge`
@@ -120,7 +120,9 @@ A version may reference an environment variable, as `$NAME` or `${NAME}`. A refe
 
 ## Job cache
 
-`install-chrome` and `install-firefox` accept `--use-cache`, which stores the installer in the CircleCI job cache and restores it on later runs. It increases cost and rarely speeds things up, so it is off by default; reach for it when downloads from a vendor mirror are unreliable.
+`install-chrome` and `install-firefox` accept `--use-cache`, which saves to the CircleCI job cache and restores from it on later runs. It increases cost and rarely speeds things up, so it is off by default; reach for it when downloads from a vendor mirror are unreliable.
+
+What is cached differs. For Firefox it is the downloaded installer. For Chrome it is the installed `/opt/google/chrome` tree, and only on Debian/Ubuntu and RHEL: on Alpine and macOS nothing is cached. A restored Chrome skips the package manager, so Chrome's shared-library dependencies are not installed on that run.
 
 Keys are:
 
@@ -189,7 +191,7 @@ jobs:
 
 ## Platform support
 
-Coverage varies by browser, because the vendors publish different builds.
+Coverage varies by browser, because the vendors publish different builds. The distro columns are for amd64 (x86-64) hosts; the Linux ARM64 column covers every distro on arm64.
 
 | | macOS | Debian/Ubuntu | Alpine | RHEL/CentOS | Linux ARM64 | Windows |
 |---|---|---|---|---|---|---|
