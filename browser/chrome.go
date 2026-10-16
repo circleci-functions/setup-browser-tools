@@ -112,12 +112,16 @@ func (i *Installer) chromeAlreadyInstalled(ctx context.Context, target string, o
 		return false
 	}
 
-	if !opts.ReplaceExisting {
-		i.logf("Chrome %s is already installed; pass --replace-existing to replace it", installed)
-		return true
-	}
 	if installed == target {
 		i.logf("Chrome %s is already installed", installed)
+		return true
+	}
+	if !opts.ReplaceExisting {
+		if target == Latest {
+			i.logf("Chrome %s is already installed; pass --replace-existing to replace it", installed)
+		} else {
+			i.logf("Chrome %s is installed but %s was requested; keeping it (pass --replace-existing to replace it)", installed, target)
+		}
 		return true
 	}
 
@@ -126,9 +130,16 @@ func (i *Installer) chromeAlreadyInstalled(ctx context.Context, target string, o
 	return false
 }
 
+// chromeBinaries lists the names a channel's Chrome can be found under. The bare
+// google-chrome name counts only for stable: any channel's package or macOS
+// wrapper can claim it, so accepting it for beta lets an installed stable
+// satisfy a beta request.
 func (i *Installer) chromeBinaries(channel string) []string {
 	if i.Platform.Distro == DistroAlpine {
 		return []string{"chromium-browser"}
+	}
+	if channel != ChannelStable {
+		return []string{"google-chrome-" + channel}
 	}
 	return []string{"google-chrome-" + channel, "google-chrome"}
 }
