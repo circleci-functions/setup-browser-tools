@@ -126,7 +126,7 @@ func (i *Installer) chromeAlreadyInstalled(ctx context.Context, target string, o
 	}
 
 	i.logf("Chrome %s is installed; replacing it with %s", installed, target)
-	i.removeChrome(ctx)
+	i.removeChrome(ctx, opts.Channel)
 	return false
 }
 
@@ -160,18 +160,20 @@ func (i *Installer) installedChromeVersion(ctx context.Context, channel string) 
 	return "", false
 }
 
-// removeChrome is best-effort, as in the orb: a failure to remove is not fatal
-// because the install that follows either succeeds or reports its own error.
-func (i *Installer) removeChrome(ctx context.Context) {
+// removeChrome removes only the given channel's Chrome, so replacing beta
+// leaves an installed stable alone. It is best-effort, as in the orb: a failure
+// to remove is not fatal because the install that follows either succeeds or
+// reports its own error.
+func (i *Installer) removeChrome(ctx context.Context, channel string) {
 	switch i.Platform.Distro {
 	case DistroMacOS:
-		_ = i.Runner.Exec(ctx, "rm", "-rf", "/Applications/Google Chrome.app")
+		_ = i.Runner.Exec(ctx, "rm", "-rf", chromeMacApp(channel))
 	case DistroAlpine:
 		_ = i.Runner.Exec(ctx, "apk", "del", "--force-broken-world", "chromium")
 	case DistroRHEL:
-		_ = i.Runner.Exec(ctx, "yum", "remove", "-y", "google-chrome-stable")
+		_ = i.Runner.Exec(ctx, "yum", "remove", "-y", "google-chrome-"+channel)
 	case DistroDebian:
-		_ = i.Runner.Exec(ctx, "apt-get", "-y", "--purge", "remove", "google-chrome-stable")
+		_ = i.Runner.Exec(ctx, "apt-get", "-y", "--purge", "remove", "google-chrome-"+channel)
 	}
 }
 
@@ -242,15 +244,19 @@ func (i *Installer) installChromeMacOS(ctx context.Context, channel string) erro
 		return err
 	}
 
-	app := "/Applications/Google Chrome.app"
-	if channel == ChannelBeta {
-		app = "/Applications/Google Chrome Beta.app"
-	}
+	app := chromeMacApp(channel)
 	// Chrome ships quarantined; without clearing the attribute it refuses to
 	// launch headless.
 	_ = i.Runner.Exec(ctx, "xattr", "-rc", app)
 
 	return i.writeChromeWrapper(ctx, dir, channel, app)
+}
+
+func chromeMacApp(channel string) string {
+	if channel == ChannelBeta {
+		return "/Applications/Google Chrome Beta.app"
+	}
+	return "/Applications/Google Chrome.app"
 }
 
 // writeChromeWrapper puts a google-chrome-<channel> script on PATH, since the
