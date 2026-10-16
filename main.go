@@ -44,7 +44,7 @@ type installBrowserToolsCmd struct {
 	ChromedriverInstallDir string `help:"Directory to install ChromeDriver into." default:"/usr/local/bin"`
 
 	ChromeForTestingVersion    string `help:"Version of Chrome for Testing to install." default:"latest"`
-	ChromeForTestingInstallDir string `help:"Directory to symlink Chrome for Testing and its driver into." default:"/usr/local/bin"`
+	ChromeForTestingInstallDir string `help:"Directory to symlink Chrome for Testing into and copy its driver into." default:"/usr/local/bin"`
 
 	FirefoxVersion    string `help:"Version of Firefox to install." default:"latest"`
 	FirefoxInstallDir string `help:"Directory to install Firefox into." default:"/usr/local/bin"`
@@ -159,7 +159,7 @@ func (c *installFirefoxCmd) Run(ctx context.Context, client *sdk.Client) error {
 
 type installChromeForTestingCmd struct {
 	Version      string `help:"Version of Chrome for Testing to install. Defaults to the latest stable release." default:"latest"`
-	InstallDir   string `help:"Directory to symlink Chrome for Testing and its driver into." default:"/usr/local/bin"`
+	InstallDir   string `help:"Directory to symlink Chrome for Testing into and copy its driver into." default:"/usr/local/bin"`
 	Chromedriver bool   `help:"Also install the matching Chrome for Testing ChromeDriver." default:"true" negatable:""`
 }
 
