@@ -151,6 +151,8 @@ There is no timeout flag. Set `no_output_timeout` on the step that runs the func
 - `brew` on `PATH` for `install-edge` on macOS
 - `install-chromedriver` needs Chrome already installed; `install-edge-driver` needs Edge
 
+Without root or `sudo`, a subcommand that would run the package manager or write to a directory the job user can't write fails before downloading anything, and says which. The drivers (`install-chromedriver` outside Alpine, `install-geckodriver`, `install-edge-driver`) need neither when `--install-dir` is writable.
+
 ## Examples
 
 ```yaml

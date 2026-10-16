@@ -69,7 +69,7 @@ func (i *Installer) InstallFirefox(ctx context.Context, opts FirefoxOptions) err
 		return err
 	}
 
-	if err := i.installFirefoxDependencies(ctx); err != nil {
+	if err := i.prepareFirefoxHost(ctx, opts.InstallDir); err != nil {
 		return err
 	}
 
@@ -109,6 +109,16 @@ func (i *Installer) firefoxSupported() error {
 		return Unsupported("Firefox", i.Platform, "only linux-x86_64 builds are published")
 	}
 	return nil
+}
+
+// firefoxPrivilege checks what the install will need before anything is
+// downloaded. On Linux the dependencies come from the package manager; on macOS
+// brew runs as the job user, so only the directories have to be writable.
+func (i *Installer) firefoxPrivilege(installDir string) error {
+	if i.Platform.IsMacOS() {
+		return i.requireWritable("Firefox", "/Applications", installDir, usrLocalBin)
+	}
+	return i.requirePrivilege("Firefox", "run "+i.packageManager())
 }
 
 func (i *Installer) resolveFirefoxVersion(ctx context.Context, requested string) (string, error) {
@@ -169,6 +179,15 @@ func (i *Installer) firefoxCacheKey(version string, opts FirefoxOptions) string 
 		return ""
 	}
 	return FirefoxCacheKey(i.Host, opts.CacheKey, version)
+}
+
+// prepareFirefoxHost checks the install has the privilege it needs, before
+// anything is downloaded, and then installs Firefox's dependencies.
+func (i *Installer) prepareFirefoxHost(ctx context.Context, installDir string) error {
+	if err := i.firefoxPrivilege(installDir); err != nil {
+		return err
+	}
+	return i.installFirefoxDependencies(ctx)
 }
 
 func (i *Installer) installFirefoxDependencies(ctx context.Context) error {

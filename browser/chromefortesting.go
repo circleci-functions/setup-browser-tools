@@ -24,6 +24,9 @@ func (i *Installer) InstallChromeForTesting(ctx context.Context, opts ChromeForT
 	if err != nil {
 		return err
 	}
+	if err := i.chromeForTestingPrivilege(opts.InstallDir); err != nil {
+		return err
+	}
 
 	requested, err := ExpandVersion(opts.Version, "--version", nil)
 	if err != nil {
@@ -65,6 +68,16 @@ func (i *Installer) chromeForTestingPlatform() (string, error) {
 	default:
 		return "", Unsupported("Chrome for Testing", i.Platform, "builds are published for mac-arm64 and linux64 only")
 	}
+}
+
+// chromeForTestingPrivilege checks what the install will need before anything
+// is downloaded: apt-get for the build's libraries on Debian, and on macOS the
+// unpack and symlink directories.
+func (i *Installer) chromeForTestingPrivilege(installDir string) error {
+	if i.Platform.Distro == DistroDebian {
+		return i.requirePrivilege("Chrome for Testing", "run apt-get")
+	}
+	return i.requireWritable("Chrome for Testing", filepath.Dir(chromeForTestingTree), installDir)
 }
 
 func (i *Installer) resolveChromeForTestingVersion(ctx context.Context, requested string) (string, error) {

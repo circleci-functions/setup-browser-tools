@@ -80,6 +80,7 @@ type Host struct {
 	Root     string
 	LookPath func(string) (string, error)
 	Geteuid  func() int
+	Writable func(dir string) bool
 }
 
 func (h Host) goos() string {
@@ -120,6 +121,22 @@ func (h Host) geteuid() int {
 func (h Host) has(name string) bool {
 	_, err := h.lookPath(name)
 	return err == nil
+}
+
+// writable reports whether the current user can create files in dir. It tries
+// to, rather than reading permission bits, so a read-only mount or an ACL
+// counts as well.
+func (h Host) writable(dir string) bool {
+	if h.Writable != nil {
+		return h.Writable(dir)
+	}
+	f, err := os.CreateTemp(dir, ".setup-browser-tools-")
+	if err != nil {
+		return false
+	}
+	_ = f.Close()
+	_ = os.Remove(f.Name())
+	return true
 }
 
 // Detect classifies the host, testing families in the order macOS, Alpine,
