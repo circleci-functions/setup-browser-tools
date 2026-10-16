@@ -69,6 +69,11 @@ func (i *Installer) installEdgeMacOS(ctx context.Context) error {
 	return err
 }
 
+// edgeKeyringPath keeps Microsoft's signing key armored. apt reads an .asc
+// keyring directly, so no gpg --dearmor is needed and Edge installs on images
+// without gpg.
+const edgeKeyringPath = "/usr/share/keyrings/microsoft-archive-keyring.asc"
+
 // installEdgeDebian adds Microsoft's signed apt repository and installs from it.
 // Every privileged step goes through the resolved prefix; the orb used a literal
 // sudo here, which breaks in a root container with no sudo installed.
@@ -84,27 +89,17 @@ func (i *Installer) installEdgeDebian(ctx context.Context, version string) error
 		return err
 	}
 
-	keyring := filepath.Join(dir, "microsoft-archive-keyring.gpg")
-	if _, err := i.Runner.Run(ctx, Command{
-		Name:         "gpg",
-		Args:         []string{"--batch", "--yes", "--dearmor", "--output", keyring, key},
-		Unprivileged: true,
-		Quiet:        true,
-	}); err != nil {
-		return fmt.Errorf("dearmor the Microsoft signing key: %w", err)
-	}
-	const keyringPath = "/usr/share/keyrings/microsoft-archive-keyring.gpg"
-	if err := i.Runner.Exec(ctx, "cp", keyring, keyringPath); err != nil {
+	if err := i.Runner.Exec(ctx, "cp", key, edgeKeyringPath); err != nil {
 		return err
 	}
 	// apt runs as the _apt user and silently ignores a keyring it cannot read.
-	if err := i.Runner.Exec(ctx, "chmod", "0644", keyringPath); err != nil {
+	if err := i.Runner.Exec(ctx, "chmod", "0644", edgeKeyringPath); err != nil {
 		return err
 	}
 
 	list := filepath.Join(dir, "microsoft-edge.list")
-	entry := fmt.Sprintf("deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-archive-keyring.gpg] %s/repos/edge stable main\n",
-		i.Endpoints.MicrosoftPackages)
+	entry := fmt.Sprintf("deb [arch=amd64 signed-by=%s] %s/repos/edge stable main\n",
+		edgeKeyringPath, i.Endpoints.MicrosoftPackages)
 	if err := writeFile(list, strings.NewReader(entry), 0o644); err != nil {
 		return err
 	}

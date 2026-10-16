@@ -184,16 +184,27 @@ func (i *Installer) installFirefoxDependencies(ctx context.Context) error {
 		})
 		return err
 	case DistroRHEL:
-		return i.Runner.Exec(ctx, "yum", "install", "-y",
+		packages := i.withGPG("gnupg2",
 			"alsa-lib", "bzip2", "dbus-glib-devel", "gtk2-devel", "gtk3-devel", "libXt-devel", "perl", "which")
+		return i.Runner.Exec(ctx, "yum", append([]string{"install", "-y"}, packages...)...)
 	case DistroDebian:
 		if err := i.Runner.AptUpdate(ctx); err != nil {
 			return err
 		}
-		return i.aptInstall(ctx, "libasound-dev", "libxt6", "libgtk-3-dev", "libdbus-glib-1-2")
+		return i.aptInstall(ctx, i.withGPG("gnupg", "libasound-dev", "libxt6", "libgtk-3-dev", "libdbus-glib-1-2")...)
 	default:
 		return Unsupported("Firefox", i.Platform, "")
 	}
+}
+
+// withGPG adds gpgPackage to packages when gpg is not on PATH. The download is
+// signature-checked with gpg, which minimal Debian and RHEL images lack.
+// Installing it only when missing leaves an image's own gpg package alone.
+func (i *Installer) withGPG(gpgPackage string, packages ...string) []string {
+	if i.Host.has("gpg") {
+		return packages
+	}
+	return append(packages, gpgPackage)
 }
 
 // fetchAndVerifyFirefox downloads the archive and checks it, returning the local

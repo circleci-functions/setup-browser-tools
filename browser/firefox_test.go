@@ -311,3 +311,42 @@ func TestInstallFirefoxRejectsUnresolvableVersion(t *testing.T) {
 	assert.Assert(t, err != nil)
 	assert.Assert(t, strings.Contains(err.Error(), "FF_NOT_SET"))
 }
+
+func TestInstallFirefoxDependenciesAddsGPGWhenMissing(t *testing.T) {
+	tests := []struct {
+		name    string
+		distro  Distro
+		onPath  []string
+		command string
+		wantGPG string
+	}{
+		{name: "Debian without gpg", distro: DistroDebian, command: "apt-get", wantGPG: "gnupg"},
+		{name: "Debian with gpg", distro: DistroDebian, onPath: []string{"gpg"}, command: "apt-get"},
+		{name: "RHEL without gpg", distro: DistroRHEL, command: "yum", wantGPG: "gnupg2"},
+		{name: "RHEL with gpg", distro: DistroRHEL, onPath: []string{"gpg"}, command: "yum"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			i, calls := testInstaller(t, installerOpts{distro: tc.distro, onPath: tc.onPath})
+
+			assert.NilError(t, i.installFirefoxDependencies(context.Background()))
+
+			var install []string
+			for _, c := range *calls {
+				if c.name == tc.command && len(c.args) > 0 && c.args[0] == "install" {
+					install = c.args
+				}
+			}
+			assert.Assert(t, install != nil, "no %s install: %+v", tc.command, *calls)
+			hasGnupg := false
+			for _, arg := range install {
+				if strings.HasPrefix(arg, "gnupg") {
+					assert.Equal(t, arg, tc.wantGPG)
+					hasGnupg = true
+				}
+			}
+			assert.Equal(t, hasGnupg, tc.wantGPG != "", "install args: %v", install)
+		})
+	}
+}
