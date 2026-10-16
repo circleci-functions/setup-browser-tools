@@ -171,6 +171,30 @@ jobs:
           name: Assert Chrome reports a version
           command: google-chrome --version | grep -E '[0-9]+\.[0-9]+\.[0-9]+'
 
+  install-debian-bare-firefox-edge:
+    docker:
+      - image: debian:bookworm
+    steps:
+      - run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: install-firefox and install-edge without gpg
+          command: |
+            if command -v gpg; then
+              echo "FAIL: this image is meant to start without gpg" >&2
+              exit 1
+            fi
+            BIN=./dist/setup-browser-tools/linux/amd64/setup-browser-tools
+            "$BIN" install-firefox
+            "$BIN" install-edge
+      - run:
+          name: Assert Firefox and Edge report versions
+          command: |
+            firefox --version
+            microsoft-edge --version
+
   install-macos-chrome:
     executor: macos
     steps:
@@ -259,6 +283,9 @@ workflows:
           requires: [build]
           context: [github-readonly]
       - install-rhel-chrome:
+          requires: [build]
+          context: [github-readonly]
+      - install-debian-bare-firefox-edge:
           requires: [build]
           context: [github-readonly]
       - install-macos-chrome:
