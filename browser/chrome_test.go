@@ -514,3 +514,52 @@ func TestInstallChromeRHELResolvesDepsViaYum(t *testing.T) {
 	assert.Assert(t, yum != nil, "yum was never run: %+v", *calls)
 	assert.Equal(t, yum.args[0], "install", "localinstall does not resolve dependencies")
 }
+
+func TestRemoveChromeRemovesOnlyTheRequestedChannel(t *testing.T) {
+	tests := []struct {
+		name    string
+		distro  Distro
+		channel string
+		want    []string
+	}{
+		{name: "Debian stable", distro: DistroDebian, channel: ChannelStable, want: []string{"apt-get", "-y", "--purge", "remove", "google-chrome-stable"}},
+		{name: "Debian beta", distro: DistroDebian, channel: ChannelBeta, want: []string{"apt-get", "-y", "--purge", "remove", "google-chrome-beta"}},
+		{name: "RHEL stable", distro: DistroRHEL, channel: ChannelStable, want: []string{"yum", "remove", "-y", "google-chrome-stable"}},
+		{name: "RHEL beta", distro: DistroRHEL, channel: ChannelBeta, want: []string{"yum", "remove", "-y", "google-chrome-beta"}},
+		{name: "macOS stable", distro: DistroMacOS, channel: ChannelStable, want: []string{"rm", "-rf", "/Applications/Google Chrome.app"}},
+		{name: "macOS beta", distro: DistroMacOS, channel: ChannelBeta, want: []string{"rm", "-rf", "/Applications/Google Chrome Beta.app"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			i, calls := testInstaller(t, installerOpts{distro: tc.distro})
+
+			i.removeChrome(context.Background(), tc.channel)
+
+			assert.Equal(t, len(*calls), 1, "calls: %+v", *calls)
+			c := (*calls)[0]
+			assert.DeepEqual(t, append([]string{c.name}, c.args...), tc.want)
+		})
+	}
+}
+
+func TestReplacingBetaLeavesStableInstalled(t *testing.T) {
+	i, calls := testInstaller(t, installerOpts{
+		distro:  DistroDebian,
+		onPath:  []string{"google-chrome", "google-chrome-stable", "google-chrome-beta"},
+		stdouts: map[string]string{"--version": "Google Chrome 147.0.7727.55 beta\n"},
+	})
+
+	skip := i.chromeAlreadyInstalled(context.Background(), "148.0.7800.10", ChromeOptions{
+		Channel:         ChannelBeta,
+		ReplaceExisting: true,
+	})
+	assert.Assert(t, !skip)
+
+	for _, c := range *calls {
+		line := strings.Join(append([]string{c.name}, c.args...), " ")
+		assert.Assert(t, !strings.Contains(line, "google-chrome-stable"), "stable was touched: %s", line)
+	}
+	last := (*calls)[len(*calls)-1]
+	assert.DeepEqual(t, append([]string{last.name}, last.args...), []string{"apt-get", "-y", "--purge", "remove", "google-chrome-beta"})
+}
