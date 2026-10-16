@@ -320,6 +320,32 @@ func TestInstallChromeRejectsLinuxARM64(t *testing.T) {
 	assert.Assert(t, strings.Contains(err.Error(), "ARM64"))
 }
 
+func TestInstallChromeOnAlpineARM64UsesApk(t *testing.T) {
+	i, calls := testInstaller(t, installerOpts{
+		distro:  DistroAlpine,
+		arch:    ArchARM64,
+		stdouts: map[string]string{"--version": "Chromium 136.0.7103.113 Alpine Linux\n"},
+	})
+	i.Host.LookPath = func(name string) (string, error) {
+		for _, c := range *calls {
+			if name == "chromium-browser" && c.name == "apk" && len(c.args) > 0 && c.args[0] == "add" {
+				return "/usr/bin/chromium-browser", nil
+			}
+		}
+		return "", fmt.Errorf("%s: not found", name)
+	}
+
+	assert.NilError(t, i.InstallChrome(context.Background(), ChromeOptions{Version: Latest, Channel: ChannelStable}))
+
+	var added bool
+	for _, c := range *calls {
+		if c.name == "apk" && strings.Join(c.args, " ") == "add --no-cache chromium" {
+			added = true
+		}
+	}
+	assert.Assert(t, added, "apk add chromium was never run: %+v", *calls)
+}
+
 func TestInstallChromeRejectsUnresolvableVersion(t *testing.T) {
 	i, _ := testInstaller(t, installerOpts{distro: DistroDebian})
 

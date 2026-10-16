@@ -193,12 +193,12 @@ Coverage varies by browser, because the vendors publish different builds.
 
 | | macOS | Debian/Ubuntu | Alpine | RHEL/CentOS | Linux ARM64 | Windows |
 |---|---|---|---|---|---|---|
-| `install-chrome` | yes | yes | yes, as Chromium | yes | no | no |
-| `install-chromedriver` | yes | yes | yes | `unzip` only | no | no |
+| `install-chrome` | yes | yes | yes, as Chromium | yes | Alpine only, as Chromium | no |
+| `install-chromedriver` | yes | yes | yes | `unzip` only | Alpine only | no |
 | `install-firefox` | yes | yes | no | yes | no | no |
-| `install-geckodriver` | yes | yes | yes | yes | no | no |
+| `install-geckodriver` | yes | yes | yes | yes | yes | no |
 | `install-chrome-for-testing` | yes | yes | no | no | no | no |
 | `install-edge` | yes | yes | no | no | no | no |
 | `install-edge-driver` | yes | yes | no | no | no | no |
 
-Asking for a browser on a platform it is not published for is an error. The exception is `install-browser-tools`: a component that is on only by default is warned about and skipped, so a bare run on Alpine installs Chromium and ChromeDriver and reports why it skipped Firefox and geckodriver. Naming that component explicitly makes it an error instead.
+Asking for a browser on a platform it is not published for is an error. The exception is `install-browser-tools`: a component that is on only by default is warned about and skipped, so a bare run on Alpine installs Chromium, ChromeDriver and geckodriver, and reports why it skipped Firefox. Naming that component explicitly makes it an error instead.
