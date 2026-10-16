@@ -2,10 +2,35 @@
 
 Installs browsers and browser-testing tools into a CircleCI job: Google Chrome, Chrome for Testing, ChromeDriver, Microsoft Edge and its WebDriver, Firefox, and geckodriver. Each is a subcommand, and `install-browser-tools` installs a default set in one step.
 
-Invoked via:
+## Usage
 
+Declare the function in a top-level `functions:` block, then call a subcommand
+as a step named `<alias>/<subcommand>`. Each flag below is a `with:` key,
+written without its leading `--`, and a step with no flags needs no `with:`:
+
+```yaml
+functions:
+  browser-tools: github.com/circleci-functions/setup-browser-tools@<version>
+
+jobs:
+  test:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - browser-tools/install-chrome:
+          with:
+            version: 147.0.7727.55
 ```
-circleci run github.com/circleci-functions/setup-browser-tools@<version> -- <subcommand> [flags]
+
+`circleci function add setup-browser-tools --as browser-tools` writes the
+`functions:` entry at the latest version. The alias is yours to choose. A
+negatable flag such as `--no-firefox` is written as `firefox: false`.
+
+Where the `functions:` block isn't available, as on CircleCI Server, run the
+function by its full name. Everything after `--` is passed to the function:
+
+```yaml
+- run: circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-chrome --version 147.0.7727.55
 ```
 
 The full `github.com/` path and the `--` separator are both required. A bare
@@ -135,7 +160,9 @@ Cache failures are never fatal: a cache miss, an unreachable cache, or running o
 
 ## Setting a timeout
 
-There is no timeout flag. Set `no_output_timeout` on the step that runs the function:
+There is no timeout flag, and a function step doesn't take `no_output_timeout`.
+Where a timeout matters, run the function by its full name in a `run:` step and
+set it there:
 
 ```yaml
 - run:
@@ -154,37 +181,46 @@ There is no timeout flag. Set `no_output_timeout` on the step that runs the func
 ## Examples
 
 ```yaml
+functions:
+  browser-tools: github.com/circleci-functions/setup-browser-tools@<version>
+
 jobs:
   test:
     docker:
       - image: cimg/base:current
     steps:
       # Chrome, ChromeDriver, Firefox and geckodriver
-      - run: circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-browser-tools
+      - browser-tools/install-browser-tools
 
       # Chrome only
-      - run: circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-chrome
+      - browser-tools/install-chrome
 
       # Pinned versions
-      - run: |
-          circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-browser-tools \
-            --chrome-version 147.0.7727.55 \
-            --firefox-version 149.0.2
+      - browser-tools/install-browser-tools:
+          with:
+            chrome-version: 147.0.7727.55
+            firefox-version: 149.0.2
 
       # Swap Firefox and geckodriver for Edge and its driver
-      - run: |
-          circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-browser-tools \
-            --no-firefox --no-geckodriver --edge --edge-driver
+      - browser-tools/install-browser-tools:
+          with:
+            firefox: false
+            geckodriver: false
+            edge: true
+            edge-driver: true
 
       # Chrome from the beta channel, with the download cached
-      - run: |
-          circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-chrome \
-            --channel beta --use-cache --cache-key v2
+      - browser-tools/install-chrome:
+          with:
+            channel: beta
+            use-cache: true
+            cache-key: v2
 
       # Chrome for Testing and its driver, into a chosen directory
-      - run: |
-          circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-chrome-for-testing \
-            --version 147.0.7727.55 --install-dir /home/circleci/bin
+      - browser-tools/install-chrome-for-testing:
+          with:
+            version: 147.0.7727.55
+            install-dir: /home/circleci/bin
 ```
 
 ## Platform support
