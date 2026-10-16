@@ -187,6 +187,9 @@ func (i *Installer) InstallEdgeDriver(ctx context.Context, opts EdgeDriverOption
 }
 
 func (i *Installer) edgeDriverPlatform() string {
+	if i.Platform.IsMacOS() && i.Platform.Arch == ArchAMD64 {
+		return "mac64"
+	}
 	if i.Platform.IsMacOS() {
 		return "mac64_m1"
 	}

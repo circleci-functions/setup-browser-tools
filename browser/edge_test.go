@@ -97,6 +97,12 @@ func TestEdgeDriverURL(t *testing.T) {
 			arch:   ArchARM64,
 			want:   "https://msedgedriver.microsoft.com/147.0.3065.51/edgedriver_mac64_m1.zip",
 		},
+		{
+			name:   "macOS amd64",
+			distro: DistroMacOS,
+			arch:   ArchAMD64,
+			want:   "https://msedgedriver.microsoft.com/147.0.3065.51/edgedriver_mac64.zip",
+		},
 	}
 
 	for _, tc := range tests {
