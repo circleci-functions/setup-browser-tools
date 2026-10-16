@@ -157,6 +157,40 @@ jobs:
               exit 1
             fi
 
+  install-alpine-arm64-default-set:
+    executor: alpine
+    resource_class: arm.medium
+    steps:
+      - run: apk add --no-cache bash git curl
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: install-browser-tools on Alpine arm64
+          command: |
+            ./dist/setup-browser-tools/linux/arm64/setup-browser-tools install-browser-tools 2>&1 | tee /tmp/alpine.log
+      - run:
+          name: Assert it skipped only Firefox
+          command: |
+            grep -q "skipping Firefox" /tmp/alpine.log
+            chromium-browser --version
+            chromedriver --version
+            geckodriver --version
+
+  install-debian-arm64-geckodriver:
+    executor: debian
+    resource_class: arm.medium
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: install-geckodriver on Debian arm64
+          command: ./dist/setup-browser-tools/linux/arm64/setup-browser-tools install-geckodriver
+      - run:
+          name: Assert geckodriver reports a version
+          command: geckodriver --version | grep -E '[0-9]+\.[0-9]+\.[0-9]+'
+
   install-rhel-chrome:
     executor: rhel
     steps:
@@ -243,6 +277,12 @@ workflows:
           requires: [build]
           context: [github-readonly]
       - install-alpine-explicit-firefox-fails:
+          requires: [build]
+          context: [github-readonly]
+      - install-alpine-arm64-default-set:
+          requires: [build]
+          context: [github-readonly]
+      - install-debian-arm64-geckodriver:
           requires: [build]
           context: [github-readonly]
       - install-rhel-chrome:

@@ -78,6 +78,9 @@ func (i *Installer) geckodriverPlatform() string {
 	if i.Platform.IsMacOS() {
 		return "macos-aarch64"
 	}
+	if i.Platform.Arch == ArchARM64 {
+		return "linux-aarch64"
+	}
 	return "linux64"
 }
 

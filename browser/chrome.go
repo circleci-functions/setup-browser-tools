@@ -25,7 +25,7 @@ type ChromeOptions struct {
 const chromeLinuxTree = "/opt/google/chrome"
 
 func (i *Installer) InstallChrome(ctx context.Context, opts ChromeOptions) error {
-	if i.Platform.IsLinuxARM64() {
+	if i.Platform.IsLinuxARM64() && i.Platform.Distro != DistroAlpine {
 		return Unsupported("Chrome", i.Platform, "Google publishes no Linux ARM64 build")
 	}
 
