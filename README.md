@@ -118,6 +118,8 @@ The full `github.com/` path and the `--` separator are both required. A bare
 
 A version may reference an environment variable, as `$NAME` or `${NAME}`. A reference to a variable that is unset, or set to the empty string, is an error rather than an empty version — so a typo fails immediately instead of building a broken download URL.
 
+`install-chromedriver` and `install-edge-driver` pick the driver for the installed browser. When none was published for that exact build, ChromeDriver falls back to the newest driver for the same milestone, and Edge WebDriver to the newest for the same major version.
+
 ## Job cache
 
 `install-chrome` and `install-firefox` accept `--use-cache`, which stores the installer in the CircleCI job cache and restores it on later runs. It increases cost and rarely speeds things up, so it is off by default; reach for it when downloads from a vendor mirror are unreliable.

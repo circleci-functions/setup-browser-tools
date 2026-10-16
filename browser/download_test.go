@@ -62,6 +62,31 @@ func TestFetcherText(t *testing.T) {
 	assert.Equal(t, got, "114.0.5735.90")
 }
 
+func TestFetcherTextDecodesAMarkedBody(t *testing.T) {
+	tests := []struct {
+		name string
+		body []byte
+	}{
+		{name: "UTF-16LE, as msedgedriver.microsoft.com serves it", body: []byte{0xFF, 0xFE, '1', 0, '5', 0, '5', 0, '.', 0, '0', 0, '\r', 0, '\n', 0}},
+		{name: "UTF-16BE", body: []byte{0xFE, 0xFF, 0, '1', 0, '5', 0, '5', 0, '.', 0, '0', 0, '\n'}},
+		{name: "UTF-8 with a BOM", body: []byte("\xEF\xBB\xBF155.0\n")},
+		{name: "plain UTF-8", body: []byte("155.0\n")},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f, srv := testFetcher(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write(tc.body)
+			}))
+			defer srv.Close()
+
+			got, err := f.Text(context.Background(), srv.URL+"/LATEST_RELEASE_155_LINUX")
+			assert.NilError(t, err)
+			assert.Equal(t, got, "155.0")
+		})
+	}
+}
+
 func TestFetcherExists(t *testing.T) {
 	f, srv := testFetcher(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

@@ -2,6 +2,9 @@ package browser
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -199,4 +202,127 @@ func TestInstallEdgeRejectsUnresolvableVersion(t *testing.T) {
 	err := i.InstallEdge(context.Background(), EdgeOptions{Version: "${EDGE_NOT_SET}"})
 	assert.Assert(t, err != nil)
 	assert.Assert(t, strings.Contains(err.Error(), "EDGE_NOT_SET"))
+}
+
+func utf16LE(s string) []byte {
+	b := []byte{0xFF, 0xFE}
+	for _, r := range s {
+		b = append(b, byte(r), 0)
+	}
+	return b
+}
+
+func edgeDriverServer(t *testing.T, published map[string][]byte, latest map[string]string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if body, ok := published[r.URL.Path]; ok {
+			_, _ = w.Write(body)
+			return
+		}
+		if v, ok := latest[r.URL.Path]; ok {
+			_, _ = w.Write(utf16LE(v + "\r\n"))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestResolveEdgeDriver(t *testing.T) {
+	tests := []struct {
+		name      string
+		distro    Distro
+		published map[string][]byte
+		latest    map[string]string
+		want      string
+		wantErr   string
+	}{
+		{
+			name:      "an exact build is used when published",
+			distro:    DistroDebian,
+			published: map[string][]byte{"/147.0.3065.51/edgedriver_linux64.zip": nil},
+			want:      "147.0.3065.51",
+		},
+		{
+			name:   "falls back to the newest build for the major on Linux",
+			distro: DistroDebian,
+			latest: map[string]string{"/LATEST_RELEASE_147_LINUX": "147.0.3065.40"},
+			want:   "147.0.3065.40",
+		},
+		{
+			name:   "falls back to the newest build for the major on macOS",
+			distro: DistroMacOS,
+			latest: map[string]string{"/LATEST_RELEASE_147_MACOS": "147.0.3065.40"},
+			want:   "147.0.3065.40",
+		},
+		{
+			name:    "no fallback published either",
+			distro:  DistroDebian,
+			wantErr: "no Edge WebDriver published for 147.0.3065.51 or for major version 147",
+		},
+		{
+			name:    "a fallback from another major is rejected",
+			distro:  DistroDebian,
+			latest:  map[string]string{"/LATEST_RELEASE_147_LINUX": "146.0.3000.1"},
+			wantErr: "not major version 147",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := edgeDriverServer(t, tc.published, tc.latest)
+			i, _ := testInstaller(t, installerOpts{distro: tc.distro})
+			i.Endpoints.MSEdgeDriver = srv.URL
+			i.Fetcher = Fetcher{HTTPClient: srv.Client()}
+
+			got, err := i.resolveEdgeDriver(context.Background(), "147.0.3065.51")
+			if tc.wantErr != "" {
+				assert.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			assert.NilError(t, err)
+			assert.Equal(t, got, tc.want)
+		})
+	}
+}
+
+func TestInstallEdgeDriverAcceptsTheMajorFallback(t *testing.T) {
+	tests := []struct {
+		name         string
+		driverBanner string
+		wantErr      string
+	}{
+		{name: "same major", driverBanner: "Microsoft Edge WebDriver 147.0.3065.40 (abc)\n"},
+		{name: "another major", driverBanner: "Microsoft Edge WebDriver 146.0.3000.1 (abc)\n", wantErr: "does not match Edge 147.0.3065.51"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			zip, err := os.ReadFile(writeZip(t, map[string]string{"msedgedriver": "binary"}))
+			assert.NilError(t, err)
+			srv := edgeDriverServer(t,
+				map[string][]byte{"/147.0.3065.40/edgedriver_linux64.zip": zip},
+				map[string]string{"/LATEST_RELEASE_147_LINUX": "147.0.3065.40"},
+			)
+
+			i, _ := testInstaller(t, installerOpts{
+				distro: DistroDebian,
+				onPath: []string{"microsoft-edge", "msedgedriver"},
+				stdouts: map[string]string{
+					"microsoft-edge --version": "Microsoft Edge 147.0.3065.51 \n",
+					"msedgedriver --version":   tc.driverBanner,
+				},
+			})
+			i.Endpoints.MSEdgeDriver = srv.URL
+			i.Fetcher = Fetcher{HTTPClient: srv.Client()}
+
+			err = i.InstallEdgeDriver(context.Background(), EdgeDriverOptions{InstallDir: t.TempDir()})
+			if tc.wantErr != "" {
+				assert.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			assert.NilError(t, err)
+		})
+	}
 }
