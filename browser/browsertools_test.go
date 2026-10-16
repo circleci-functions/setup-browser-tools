@@ -162,6 +162,73 @@ func TestBrowserToolsDisabledComponentsNeverRun(t *testing.T) {
 	assert.DeepEqual(t, ran, []string{"Chrome", "ChromeDriver"})
 }
 
+func TestBrowserToolsInstallsOneChromedriver(t *testing.T) {
+	tests := []struct {
+		name       string
+		opts       BrowserToolsOptions
+		wantErr    string
+		wantRan    []string
+		wantWarned string
+	}{
+		{
+			name: "the Chrome for Testing driver replaces a default ChromeDriver",
+			opts: BrowserToolsOptions{
+				Chrome: true, ChromeDriver: true, ChromeForTesting: true, ChromeForTestingDriver: true,
+				Explicit: ExplicitFlags{"chrome-for-testing": true, "chrome-for-testing-driver": true},
+			},
+			wantRan:    []string{"Chrome for Testing", "Chrome"},
+			wantWarned: "skipping ChromeDriver: using the Chrome for Testing chromedriver",
+		},
+		{
+			name: "asking for both by name is an error",
+			opts: BrowserToolsOptions{
+				Chrome: true, ChromeDriver: true, ChromeForTesting: true, ChromeForTestingDriver: true,
+				Explicit: ExplicitFlags{"chromedriver": true, "chrome-for-testing": true, "chrome-for-testing-driver": true},
+			},
+			wantErr: "pass only one",
+		},
+		{
+			name: "Chrome for Testing without its driver keeps ChromeDriver",
+			opts: BrowserToolsOptions{
+				Chrome: true, ChromeDriver: true, ChromeForTesting: true,
+				Explicit: ExplicitFlags{"chrome-for-testing": true},
+			},
+			wantRan: []string{"Chrome for Testing", "Chrome", "ChromeDriver"},
+		},
+		{
+			name: "the driver flag alone installs no Chrome for Testing, so ChromeDriver stays",
+			opts: BrowserToolsOptions{
+				Chrome: true, ChromeDriver: true, ChromeForTestingDriver: true,
+				Explicit: ExplicitFlags{"chrome-for-testing-driver": true},
+			},
+			wantRan: []string{"Chrome", "ChromeDriver"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var log bytes.Buffer
+			i, _ := testInstaller(t, installerOpts{distro: DistroDebian})
+			i.Out = &log
+
+			var ran []string
+			stubComponents(i, map[string]error{}, &ran)
+
+			err := i.InstallBrowserTools(context.Background(), tc.opts)
+			if tc.wantErr != "" {
+				assert.ErrorContains(t, err, tc.wantErr)
+				assert.Equal(t, len(ran), 0, "nothing may install before the clash is reported: %v", ran)
+				return
+			}
+			assert.NilError(t, err)
+			assert.DeepEqual(t, ran, tc.wantRan)
+			if tc.wantWarned != "" {
+				assert.Assert(t, strings.Contains(log.String(), tc.wantWarned), "log was %q", log.String())
+			}
+		})
+	}
+}
+
 func TestExplicitFlagsHas(t *testing.T) {
 	e := ExplicitFlags{"firefox": true}
 	assert.Assert(t, e.Has("firefox"))

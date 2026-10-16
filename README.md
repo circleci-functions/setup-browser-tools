@@ -45,7 +45,7 @@ The full `github.com/` path and the `--` separator are both required. A bare
 | `--firefox` / `--no-firefox` | bool | `true` | Install Firefox |
 | `--geckodriver` / `--no-geckodriver` | bool | `true` | Install geckodriver |
 | `--chrome-for-testing` | bool | `false` | Install Chrome for Testing |
-| `--chrome-for-testing-driver` | bool | `false` | Install the Chrome for Testing ChromeDriver alongside it |
+| `--chrome-for-testing-driver` | bool | `false` | Install the Chrome for Testing ChromeDriver alongside it, in place of the default ChromeDriver. Passing `--chromedriver` as well is an error. |
 | `--edge` | bool | `false` | Install Microsoft Edge |
 | `--edge-driver` | bool | `false` | Install Edge WebDriver |
 | `--chrome-version` | string | `latest` | Version of Chrome to install |
