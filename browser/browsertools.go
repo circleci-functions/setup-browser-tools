@@ -1,6 +1,9 @@
 package browser
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 // ExplicitFlags names the flags a caller actually passed, as opposed to those
 // left at their default. It decides whether an unsupported platform is fatal.
@@ -52,6 +55,11 @@ type component struct {
 // on Alpine would fail outright rather than installing the two browsers that do
 // work there. Any other failure is always fatal.
 func (i *Installer) InstallBrowserTools(ctx context.Context, opts BrowserToolsOptions) error {
+	opts, err := i.settleChromeDrivers(opts)
+	if err != nil {
+		return err
+	}
+
 	for _, c := range i.browserToolsComponents(opts) {
 		if !c.Enabled {
 			continue
@@ -67,6 +75,23 @@ func (i *Installer) InstallBrowserTools(ctx context.Context, opts BrowserToolsOp
 		}
 	}
 	return nil
+}
+
+// settleChromeDrivers keeps the set to one chromedriver. The Chrome for Testing
+// driver and ChromeDriver are both installed as chromedriver on PATH, so with
+// both on the second would replace the first. The Chrome for Testing driver is
+// off by default, so it wins over a ChromeDriver that is only on by default;
+// asking for both by name is an error.
+func (i *Installer) settleChromeDrivers(opts BrowserToolsOptions) (BrowserToolsOptions, error) {
+	if !opts.ChromeForTesting || !opts.ChromeForTestingDriver || !opts.ChromeDriver {
+		return opts, nil
+	}
+	if opts.Explicit.Has("chromedriver") && opts.Explicit.Has("chrome-for-testing-driver") {
+		return opts, errors.New("--chromedriver and --chrome-for-testing-driver both install chromedriver; pass only one")
+	}
+	i.logf("skipping ChromeDriver: using the Chrome for Testing chromedriver")
+	opts.ChromeDriver = false
+	return opts, nil
 }
 
 // browserToolsComponents returns the components to install, honouring the test
