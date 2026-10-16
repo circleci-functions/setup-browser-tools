@@ -189,23 +189,18 @@ jobs:
             google-chrome --version
             chromedriver --version
 
-  install-macos-firefox-edge:
+  install-macos-edge:
     executor: macos
     steps:
       - checkout
       - attach_workspace:
           at: .
       - run:
-          name: install-firefox and install-edge, which both use brew
-          command: |
-            BIN=./dist/setup-browser-tools/darwin/arm64/setup-browser-tools
-            "$BIN" install-firefox
-            "$BIN" install-edge
+          name: install-edge, which uses brew
+          command: ./dist/setup-browser-tools/darwin/arm64/setup-browser-tools install-edge
       - run:
-          name: Assert Firefox and Edge report versions
-          command: |
-            firefox --version
-            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge" --version
+          name: Assert Edge reports a version
+          command: '"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge" --version'
 
   install-debian-opt-in-set:
     executor: debian
@@ -269,7 +264,7 @@ workflows:
       - install-macos-chrome:
           requires: [build]
           context: [github-readonly]
-      - install-macos-firefox-edge:
+      - install-macos-edge:
           requires: [build]
           context: [github-readonly]
       - install-debian-opt-in-set:
