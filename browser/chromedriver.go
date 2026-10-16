@@ -60,6 +60,9 @@ func (i *Installer) InstallChromeDriver(ctx context.Context, opts ChromeDriverOp
 		i.logf("ChromeDriver %s is installed; replacing it with %s", installed, driverVersion)
 		_ = i.Runner.Exec(ctx, "rm", "-f", filepath.Join(opts.InstallDir, "chromedriver"))
 	}
+	if err := i.requireWritable("ChromeDriver", opts.InstallDir); err != nil {
+		return err
+	}
 
 	if err := i.downloadAndInstallBinary(ctx, downloadURL, "chromedriver", opts.InstallDir, "chromedriver.zip"); err != nil {
 		return err
@@ -77,6 +80,9 @@ func (i *Installer) InstallChromeDriver(ctx context.Context, opts ChromeDriverOp
 // installChromeDriverAlpine short-circuits: Alpine packages the driver alongside
 // Chromium, and the install directory cannot be chosen.
 func (i *Installer) installChromeDriverAlpine(ctx context.Context) error {
+	if err := i.requirePrivilege("ChromeDriver", "run apk"); err != nil {
+		return err
+	}
 	if err := i.Runner.RunWithRetry(ctx, Command{Name: "apk", Args: []string{"update"}}); err != nil {
 		return err
 	}

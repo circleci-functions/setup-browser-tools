@@ -36,6 +36,10 @@ func (i *Installer) InstallGeckodriver(ctx context.Context, opts GeckodriverOpti
 		_ = i.Runner.Exec(ctx, "rm", "-f", filepath.Join(opts.InstallDir, "geckodriver"))
 	}
 
+	if err := i.requireWritable("geckodriver", opts.InstallDir); err != nil {
+		return err
+	}
+
 	url := i.geckodriverURL(tag)
 	if err := i.downloadAndInstallBinary(ctx, url, "geckodriver", opts.InstallDir, "geckodriver.tar.gz"); err != nil {
 		return err

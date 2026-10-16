@@ -24,6 +24,11 @@ func (i *Installer) InstallEdge(ctx context.Context, opts EdgeOptions) error {
 	if err != nil {
 		return err
 	}
+	if !i.Platform.IsMacOS() {
+		if err := i.requirePrivilege("Microsoft Edge", "run apt-get"); err != nil {
+			return err
+		}
+	}
 
 	if i.Platform.IsMacOS() {
 		if err := i.installEdgeMacOS(ctx); err != nil {
@@ -158,6 +163,9 @@ type EdgeDriverOptions struct {
 
 func (i *Installer) InstallEdgeDriver(ctx context.Context, opts EdgeDriverOptions) error {
 	if err := i.edgeSupported("Edge WebDriver"); err != nil {
+		return err
+	}
+	if err := i.requireWritable("Edge WebDriver", opts.InstallDir); err != nil {
 		return err
 	}
 
