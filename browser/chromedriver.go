@@ -310,6 +310,12 @@ func majorVersion(version string) (int, error) {
 	return major, nil
 }
 
+func sameMajor(a, b string) bool {
+	majorA, errA := majorVersion(a)
+	majorB, errB := majorVersion(b)
+	return errA == nil && errB == nil && majorA == majorB
+}
+
 // numericVersion strips anything that is not a digit or dot, which is how an
 // "esr" or build suffix is dropped before a catalogue lookup.
 func numericVersion(version string) string {
