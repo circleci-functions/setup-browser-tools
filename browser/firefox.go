@@ -177,10 +177,11 @@ func (i *Installer) installFirefoxDependencies(ctx context.Context) error {
 		// gpg verifies the checksum manifest; coreutils is what the orb pulls in
 		// alongside it.
 		_, err := i.Runner.Run(ctx, Command{
-			Name:  "brew",
-			Args:  []string{"install", "gnupg", "coreutils"},
-			Env:   []string{"HOMEBREW_NO_AUTO_UPDATE=1"},
-			Quiet: true,
+			Name:         "brew",
+			Args:         []string{"install", "gnupg", "coreutils"},
+			Env:          []string{"HOMEBREW_NO_AUTO_UPDATE=1"},
+			Unprivileged: true,
+			Quiet:        true,
 		})
 		return err
 	case DistroRHEL:
