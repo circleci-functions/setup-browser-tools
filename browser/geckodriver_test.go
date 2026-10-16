@@ -66,11 +66,11 @@ func TestGeckodriverURL(t *testing.T) {
 			want:   "https://github.com/mozilla/geckodriver/releases/download/v0.36.0/geckodriver-v0.36.0-macos-aarch64.tar.gz",
 		},
 		{
-			name:   "macOS amd64 still uses the aarch64 build, as the orb does",
+			name:   "macOS amd64 uses the x86-64 build",
 			distro: DistroMacOS,
 			arch:   ArchAMD64,
 			tag:    "v0.35.0",
-			want:   "https://github.com/mozilla/geckodriver/releases/download/v0.35.0/geckodriver-v0.35.0-macos-aarch64.tar.gz",
+			want:   "https://github.com/mozilla/geckodriver/releases/download/v0.35.0/geckodriver-v0.35.0-macos.tar.gz",
 		},
 	}
 
