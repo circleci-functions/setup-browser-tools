@@ -332,3 +332,27 @@ func TestRealExecReportsFailure(t *testing.T) {
 	assert.Assert(t, err != nil)
 	assert.Assert(t, strings.Contains(err.Error(), "false"))
 }
+
+func TestBrewNeverRunsUnderSudo(t *testing.T) {
+	tests := []struct {
+		name    string
+		install func(*Installer) error
+	}{
+		{name: "Firefox dependencies", install: func(i *Installer) error { return i.installFirefoxDependencies(context.Background()) }},
+		{name: "Edge", install: func(i *Installer) error { return i.installEdgeMacOS(context.Background()) }},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			i, calls := testInstaller(t, installerOpts{distro: DistroMacOS, arch: ArchARM64, onPath: []string{"brew", "sudo"}})
+			i.Runner.Priv = sudoPrivilege()
+
+			assert.NilError(t, tc.install(i))
+
+			assert.Assert(t, len(*calls) > 0)
+			for _, c := range *calls {
+				assert.Equal(t, c.name, "brew", "brew was not run as the job user: %+v", *calls)
+			}
+		})
+	}
+}

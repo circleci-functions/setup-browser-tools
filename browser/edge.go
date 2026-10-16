@@ -57,14 +57,17 @@ func (i *Installer) edgeSupported(component string) error {
 	}
 }
 
+// installEdgeMacOS runs brew as the job user, never under sudo: Homebrew
+// refuses to run as root.
 func (i *Installer) installEdgeMacOS(ctx context.Context) error {
 	if !i.Host.has("brew") {
 		return fmt.Errorf("brew is required to install Edge on macOS but is not installed")
 	}
 	_, err := i.Runner.Run(ctx, Command{
-		Name: "brew",
-		Args: []string{"install", "--cask", "microsoft-edge"},
-		Env:  []string{"HOMEBREW_NO_AUTO_UPDATE=1"},
+		Name:         "brew",
+		Args:         []string{"install", "--cask", "microsoft-edge"},
+		Env:          []string{"HOMEBREW_NO_AUTO_UPDATE=1"},
+		Unprivileged: true,
 	})
 	return err
 }
