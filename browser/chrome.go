@@ -112,23 +112,34 @@ func (i *Installer) chromeAlreadyInstalled(ctx context.Context, target string, o
 		return false
 	}
 
-	if !opts.ReplaceExisting {
-		i.logf("Chrome %s is already installed; pass --replace-existing to replace it", installed)
-		return true
-	}
 	if installed == target {
 		i.logf("Chrome %s is already installed", installed)
 		return true
 	}
+	if !opts.ReplaceExisting {
+		if target == Latest {
+			i.logf("Chrome %s is already installed; pass --replace-existing to replace it", installed)
+		} else {
+			i.logf("Chrome %s is installed but %s was requested; keeping it (pass --replace-existing to replace it)", installed, target)
+		}
+		return true
+	}
 
 	i.logf("Chrome %s is installed; replacing it with %s", installed, target)
-	i.removeChrome(ctx)
+	i.removeChrome(ctx, opts.Channel)
 	return false
 }
 
+// chromeBinaries lists the names a channel's Chrome can be found under. The bare
+// google-chrome name counts only for stable: any channel's package or macOS
+// wrapper can claim it, so accepting it for beta lets an installed stable
+// satisfy a beta request.
 func (i *Installer) chromeBinaries(channel string) []string {
 	if i.Platform.Distro == DistroAlpine {
 		return []string{"chromium-browser"}
+	}
+	if channel != ChannelStable {
+		return []string{"google-chrome-" + channel}
 	}
 	return []string{"google-chrome-" + channel, "google-chrome"}
 }
@@ -149,18 +160,20 @@ func (i *Installer) installedChromeVersion(ctx context.Context, channel string) 
 	return "", false
 }
 
-// removeChrome is best-effort, as in the orb: a failure to remove is not fatal
-// because the install that follows either succeeds or reports its own error.
-func (i *Installer) removeChrome(ctx context.Context) {
+// removeChrome removes only the given channel's Chrome, so replacing beta
+// leaves an installed stable alone. It is best-effort, as in the orb: a failure
+// to remove is not fatal because the install that follows either succeeds or
+// reports its own error.
+func (i *Installer) removeChrome(ctx context.Context, channel string) {
 	switch i.Platform.Distro {
 	case DistroMacOS:
-		_ = i.Runner.Exec(ctx, "rm", "-rf", "/Applications/Google Chrome.app")
+		_ = i.Runner.Exec(ctx, "rm", "-rf", chromeMacApp(channel))
 	case DistroAlpine:
 		_ = i.Runner.Exec(ctx, "apk", "del", "--force-broken-world", "chromium")
 	case DistroRHEL:
-		_ = i.Runner.Exec(ctx, "yum", "remove", "-y", "google-chrome-stable")
+		_ = i.Runner.Exec(ctx, "yum", "remove", "-y", "google-chrome-"+channel)
 	case DistroDebian:
-		_ = i.Runner.Exec(ctx, "apt-get", "-y", "--purge", "remove", "google-chrome-stable")
+		_ = i.Runner.Exec(ctx, "apt-get", "-y", "--purge", "remove", "google-chrome-"+channel)
 	}
 }
 
@@ -231,15 +244,19 @@ func (i *Installer) installChromeMacOS(ctx context.Context, channel string) erro
 		return err
 	}
 
-	app := "/Applications/Google Chrome.app"
-	if channel == ChannelBeta {
-		app = "/Applications/Google Chrome Beta.app"
-	}
+	app := chromeMacApp(channel)
 	// Chrome ships quarantined; without clearing the attribute it refuses to
 	// launch headless.
 	_ = i.Runner.Exec(ctx, "xattr", "-rc", app)
 
 	return i.writeChromeWrapper(ctx, dir, channel, app)
+}
+
+func chromeMacApp(channel string) string {
+	if channel == ChannelBeta {
+		return "/Applications/Google Chrome Beta.app"
+	}
+	return "/Applications/Google Chrome.app"
 }
 
 // writeChromeWrapper puts a google-chrome-<channel> script on PATH, since the

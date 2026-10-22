@@ -196,6 +196,7 @@ func TestChromeAlreadyInstalled(t *testing.T) {
 	tests := []struct {
 		name            string
 		distro          Distro
+		channel         string
 		onPath          []string
 		banner          string
 		target          string
@@ -252,6 +253,41 @@ func TestChromeAlreadyInstalled(t *testing.T) {
 			wantSkip:        true,
 		},
 		{
+			name:     "stable accepts the bare google-chrome",
+			distro:   DistroDebian,
+			onPath:   []string{"google-chrome"},
+			banner:   "Google Chrome 147.0.7727.55 \n",
+			target:   "147.0.7727.55",
+			wantSkip: true,
+		},
+		{
+			name:     "beta does not take the bare google-chrome for its own",
+			distro:   DistroDebian,
+			channel:  ChannelBeta,
+			onPath:   []string{"google-chrome"},
+			banner:   "Google Chrome 147.0.7727.55 \n",
+			target:   "148.0.7800.10",
+			wantSkip: false,
+		},
+		{
+			name:     "beta finds google-chrome-beta",
+			distro:   DistroDebian,
+			channel:  ChannelBeta,
+			onPath:   []string{"google-chrome", "google-chrome-beta"},
+			banner:   "Google Chrome 148.0.7800.10 beta\n",
+			target:   "148.0.7800.10",
+			wantSkip: true,
+		},
+		{
+			name:     "beta on macOS ignores the wrapper's bare link",
+			distro:   DistroMacOS,
+			channel:  ChannelBeta,
+			onPath:   []string{"google-chrome"},
+			banner:   "Google Chrome 147.0.7727.55 \n",
+			target:   "148.0.7800.10",
+			wantSkip: false,
+		},
+		{
 			name:            "Alpine reads chromium-browser",
 			distro:          DistroAlpine,
 			onPath:          []string{"chromium-browser"},
@@ -271,11 +307,66 @@ func TestChromeAlreadyInstalled(t *testing.T) {
 				stdouts: stdouts,
 			})
 
+			channel := tc.channel
+			if channel == "" {
+				channel = ChannelStable
+			}
 			skip := i.chromeAlreadyInstalled(context.Background(), tc.target, ChromeOptions{
-				Channel:         ChannelStable,
+				Channel:         channel,
 				ReplaceExisting: tc.replaceExisting,
 			})
 			assert.Equal(t, skip, tc.wantSkip)
+		})
+	}
+}
+
+func TestChromeAlreadyInstalledLogsWhatItKeeps(t *testing.T) {
+	tests := []struct {
+		name      string
+		distro    Distro
+		onPath    []string
+		banner    string
+		target    string
+		wantInLog string
+	}{
+		{
+			name:      "same version",
+			distro:    DistroDebian,
+			onPath:    []string{"google-chrome-stable"},
+			banner:    "Google Chrome 147.0.7727.55 \n",
+			target:    "147.0.7727.55",
+			wantInLog: "Chrome 147.0.7727.55 is already installed\n",
+		},
+		{
+			name:      "a different version names both",
+			distro:    DistroDebian,
+			onPath:    []string{"google-chrome-stable"},
+			banner:    "Google Chrome 140.0.1.2 \n",
+			target:    "147.0.7727.55",
+			wantInLog: "Chrome 140.0.1.2 is installed but 147.0.7727.55 was requested; keeping it (pass --replace-existing to replace it)",
+		},
+		{
+			name:      "unresolved latest on Alpine",
+			distro:    DistroAlpine,
+			onPath:    []string{"chromium-browser"},
+			banner:    "Chromium 120.0.6099.129 \n",
+			target:    Latest,
+			wantInLog: "Chrome 120.0.6099.129 is already installed; pass --replace-existing to replace it",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			i, _ := testInstaller(t, installerOpts{
+				distro:  tc.distro,
+				onPath:  tc.onPath,
+				stdouts: map[string]string{"--version": tc.banner},
+			})
+			var log strings.Builder
+			i.Out = &log
+
+			assert.Assert(t, i.chromeAlreadyInstalled(context.Background(), tc.target, ChromeOptions{Channel: ChannelStable}))
+			assert.Assert(t, strings.Contains(log.String(), tc.wantInLog), "log was %q", log.String())
 		})
 	}
 }
@@ -513,4 +604,53 @@ func TestInstallChromeRHELResolvesDepsViaYum(t *testing.T) {
 	}
 	assert.Assert(t, yum != nil, "yum was never run: %+v", *calls)
 	assert.Equal(t, yum.args[0], "install", "localinstall does not resolve dependencies")
+}
+
+func TestRemoveChromeRemovesOnlyTheRequestedChannel(t *testing.T) {
+	tests := []struct {
+		name    string
+		distro  Distro
+		channel string
+		want    []string
+	}{
+		{name: "Debian stable", distro: DistroDebian, channel: ChannelStable, want: []string{"apt-get", "-y", "--purge", "remove", "google-chrome-stable"}},
+		{name: "Debian beta", distro: DistroDebian, channel: ChannelBeta, want: []string{"apt-get", "-y", "--purge", "remove", "google-chrome-beta"}},
+		{name: "RHEL stable", distro: DistroRHEL, channel: ChannelStable, want: []string{"yum", "remove", "-y", "google-chrome-stable"}},
+		{name: "RHEL beta", distro: DistroRHEL, channel: ChannelBeta, want: []string{"yum", "remove", "-y", "google-chrome-beta"}},
+		{name: "macOS stable", distro: DistroMacOS, channel: ChannelStable, want: []string{"rm", "-rf", "/Applications/Google Chrome.app"}},
+		{name: "macOS beta", distro: DistroMacOS, channel: ChannelBeta, want: []string{"rm", "-rf", "/Applications/Google Chrome Beta.app"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			i, calls := testInstaller(t, installerOpts{distro: tc.distro})
+
+			i.removeChrome(context.Background(), tc.channel)
+
+			assert.Equal(t, len(*calls), 1, "calls: %+v", *calls)
+			c := (*calls)[0]
+			assert.DeepEqual(t, append([]string{c.name}, c.args...), tc.want)
+		})
+	}
+}
+
+func TestReplacingBetaLeavesStableInstalled(t *testing.T) {
+	i, calls := testInstaller(t, installerOpts{
+		distro:  DistroDebian,
+		onPath:  []string{"google-chrome", "google-chrome-stable", "google-chrome-beta"},
+		stdouts: map[string]string{"--version": "Google Chrome 147.0.7727.55 beta\n"},
+	})
+
+	skip := i.chromeAlreadyInstalled(context.Background(), "148.0.7800.10", ChromeOptions{
+		Channel:         ChannelBeta,
+		ReplaceExisting: true,
+	})
+	assert.Assert(t, !skip)
+
+	for _, c := range *calls {
+		line := strings.Join(append([]string{c.name}, c.args...), " ")
+		assert.Assert(t, !strings.Contains(line, "google-chrome-stable"), "stable was touched: %s", line)
+	}
+	last := (*calls)[len(*calls)-1]
+	assert.DeepEqual(t, append([]string{last.name}, last.args...), []string{"apt-get", "-y", "--purge", "remove", "google-chrome-beta"})
 }

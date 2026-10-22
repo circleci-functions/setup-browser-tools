@@ -49,7 +49,7 @@ The full `github.com/` path and the `--` separator are both required. A bare
 | `--edge` | bool | `false` | Install Microsoft Edge |
 | `--edge-driver` | bool | `false` | Install Edge WebDriver |
 | `--chrome-version` | string | `latest` | Version of Chrome to install |
-| `--replace-existing-chrome` | bool | `false` | Replace an existing Chrome when it is a different version |
+| `--replace-existing-chrome` | bool | `false` | Replace an existing Chrome when it is a different version. Without it, an installed Chrome is kept whatever its version. |
 | `--chromedriver-install-dir` | string | `/usr/local/bin` | Directory to install ChromeDriver into |
 | `--chrome-for-testing-version` | string | `latest` | Version of Chrome for Testing to install |
 | `--chrome-for-testing-install-dir` | string | `/usr/local/bin` | Directory to symlink Chrome for Testing and its driver into |
@@ -66,7 +66,7 @@ The full `github.com/` path and the `--` separator are both required. A bare
 |---|---|---|---|
 | `--version` | string | `latest` | Version to install, e.g. `147.0.7727.55` |
 | `--channel` | enum | `stable` | Release channel: `stable` or `beta` |
-| `--replace-existing` | bool | `false` | Replace an existing Chrome when it is a different version |
+| `--replace-existing` | bool | `false` | Replace an existing Chrome of the same channel when it is a different version. Without it, an installed Chrome of that channel is kept whatever its version. |
 | `--use-cache` | bool | `false` | Restore and save Chrome via the job cache |
 | `--cache-key` | string | `v1` | Cache key prefix, for invalidating cached entries |
 
