@@ -2,10 +2,35 @@
 
 Installs browsers and browser-testing tools into a CircleCI job: Google Chrome, Chrome for Testing, ChromeDriver, Microsoft Edge and its WebDriver, Firefox, and geckodriver. Each is a subcommand, and `install-browser-tools` installs a default set in one step.
 
-Invoked via:
+## Usage
 
+Declare the function in a top-level `functions:` block, then call a subcommand
+as a step named `<alias>/<subcommand>`. Each flag below is a `with:` key,
+written without its leading `--`, and a step with no flags needs no `with:`:
+
+```yaml
+functions:
+  browser-tools: github.com/circleci-functions/setup-browser-tools@<version>
+
+jobs:
+  test:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - browser-tools/install-chrome:
+          with:
+            version: 147.0.7727.55
 ```
-circleci run github.com/circleci-functions/setup-browser-tools@<version> -- <subcommand> [flags]
+
+`circleci function add setup-browser-tools --as browser-tools` writes the
+`functions:` entry at the latest version. The alias is yours to choose. A
+negatable flag such as `--no-firefox` is written as `firefox: false`.
+
+Where the `functions:` block isn't available, as on CircleCI Server, run the
+function by its full name. Everything after `--` is passed to the function:
+
+```yaml
+- run: circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-chrome --version 147.0.7727.55
 ```
 
 The full `github.com/` path and the `--` separator are both required. A bare
@@ -17,7 +42,7 @@ The full `github.com/` path and the `--` separator are both required. A bare
 - **Installs individually**, so a job can take only what it needs
 - **Pins versions**, or resolves the latest release from the vendor
 - **Verifies downloads**: SHA-256/512 checksums for Firefox, plus OpenPGP signature verification of the checksum manifest
-- **Caches installers** for Chrome and Firefox via the CircleCI job cache, for when downloads are unreliable
+- **Caches** the Firefox installer, and the installed Chrome on Debian/Ubuntu and RHEL, via the CircleCI job cache, for when downloads are unreliable
 - **Records what it installed** in `$HOME/.browser-versions`, one line per browser
 - Reads a version from an environment variable, so `--version "$CHROME_VERSION"` works
 
@@ -52,7 +77,7 @@ The full `github.com/` path and the `--` separator are both required. A bare
 | `--replace-existing-chrome` | bool | `false` | Replace an existing Chrome when it is a different version. Without it, an installed Chrome is kept whatever its version. |
 | `--chromedriver-install-dir` | string | `/usr/local/bin` | Directory to install ChromeDriver into |
 | `--chrome-for-testing-version` | string | `latest` | Version of Chrome for Testing to install |
-| `--chrome-for-testing-install-dir` | string | `/usr/local/bin` | Directory to symlink Chrome for Testing and its driver into |
+| `--chrome-for-testing-install-dir` | string | `/usr/local/bin` | Directory to symlink Chrome for Testing into and copy its driver into |
 | `--firefox-version` | string | `latest` | Version of Firefox to install |
 | `--firefox-install-dir` | string | `/usr/local/bin` | Directory to install Firefox into |
 | `--geckodriver-version` | string | `latest` | Release tag of geckodriver to install |
@@ -97,7 +122,7 @@ The full `github.com/` path and the `--` separator are both required. A bare
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--version` | string | `latest` | Version to install |
-| `--install-dir` | string | `/usr/local/bin` | Directory to symlink Chrome and its driver into |
+| `--install-dir` | string | `/usr/local/bin` | Directory to symlink Chrome into and copy its driver into |
 | `--chromedriver` / `--no-chromedriver` | bool | `true` | Also install the matching ChromeDriver |
 
 ### `install-edge`
@@ -122,7 +147,9 @@ A version may reference an environment variable, as `$NAME` or `${NAME}`. A refe
 
 ## Job cache
 
-`install-chrome` and `install-firefox` accept `--use-cache`, which stores the installer in the CircleCI job cache and restores it on later runs. It increases cost and rarely speeds things up, so it is off by default; reach for it when downloads from a vendor mirror are unreliable.
+`install-chrome` and `install-firefox` accept `--use-cache`, which saves to the CircleCI job cache and restores from it on later runs. It increases cost and rarely speeds things up, so it is off by default; reach for it when downloads from a vendor mirror are unreliable.
+
+What is cached differs. For Firefox it is the downloaded installer. For Chrome it is the installed `/opt/google/chrome` tree, and only on Debian/Ubuntu and RHEL: on Alpine and macOS nothing is cached. A restored Chrome skips the package manager, so Chrome's shared-library dependencies are not installed on that run.
 
 Keys are:
 
@@ -137,7 +164,9 @@ Cache failures are never fatal: a cache miss, an unreachable cache, or running o
 
 ## Setting a timeout
 
-There is no timeout flag. Set `no_output_timeout` on the step that runs the function:
+There is no timeout flag, and a function step doesn't take `no_output_timeout`.
+Where a timeout matters, run the function by its full name in a `run:` step and
+set it there:
 
 ```yaml
 - run:
@@ -158,42 +187,51 @@ Without root or `sudo`, a subcommand that would run the package manager or write
 ## Examples
 
 ```yaml
+functions:
+  browser-tools: github.com/circleci-functions/setup-browser-tools@<version>
+
 jobs:
   test:
     docker:
       - image: cimg/base:current
     steps:
       # Chrome, ChromeDriver, Firefox and geckodriver
-      - run: circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-browser-tools
+      - browser-tools/install-browser-tools
 
       # Chrome only
-      - run: circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-chrome
+      - browser-tools/install-chrome
 
       # Pinned versions
-      - run: |
-          circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-browser-tools \
-            --chrome-version 147.0.7727.55 \
-            --firefox-version 149.0.2
+      - browser-tools/install-browser-tools:
+          with:
+            chrome-version: 147.0.7727.55
+            firefox-version: 149.0.2
 
       # Swap Firefox and geckodriver for Edge and its driver
-      - run: |
-          circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-browser-tools \
-            --no-firefox --no-geckodriver --edge --edge-driver
+      - browser-tools/install-browser-tools:
+          with:
+            firefox: false
+            geckodriver: false
+            edge: true
+            edge-driver: true
 
       # Chrome from the beta channel, with the download cached
-      - run: |
-          circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-chrome \
-            --channel beta --use-cache --cache-key v2
+      - browser-tools/install-chrome:
+          with:
+            channel: beta
+            use-cache: true
+            cache-key: v2
 
       # Chrome for Testing and its driver, into a chosen directory
-      - run: |
-          circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-chrome-for-testing \
-            --version 147.0.7727.55 --install-dir /home/circleci/bin
+      - browser-tools/install-chrome-for-testing:
+          with:
+            version: 147.0.7727.55
+            install-dir: /home/circleci/bin
 ```
 
 ## Platform support
 
-Coverage varies by browser, because the vendors publish different builds.
+Coverage varies by browser, because the vendors publish different builds. The distro columns are for amd64 (x86-64) hosts; the Linux ARM64 column covers every distro on arm64.
 
 | | macOS | Debian/Ubuntu | Alpine | RHEL/CentOS | Linux ARM64 | Windows |
 |---|---|---|---|---|---|---|
