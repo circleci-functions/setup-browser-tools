@@ -40,9 +40,6 @@ func NewInstaller(client *sdk.Client, out io.Writer) (*Installer, error) {
 	}
 
 	priv := ResolvePrivilege(host)
-	if !priv.Escalated() {
-		fmt.Fprintf(out, "%s: not root and sudo is unavailable; installs into system directories will fail\n", cacheKeyPrefix)
-	}
 
 	return &Installer{
 		Host:      host,

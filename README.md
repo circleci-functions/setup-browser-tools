@@ -149,9 +149,11 @@ There is no timeout flag. Set `no_output_timeout` on the step that runs the func
 ## Preconditions
 
 - Root, or `sudo` available — browsers install into system directories
-- `gpg` on `PATH` for `install-firefox`, which verifies the checksum manifest's signature
+- `install-firefox` verifies the checksum manifest's signature with `gpg`. On Debian/Ubuntu and RHEL a missing `gpg` is installed along with Firefox's other dependencies (`gnupg` or `gnupg2`); on macOS it comes from `brew`
 - `brew` on `PATH` for `install-edge` on macOS
 - `install-chromedriver` needs Chrome already installed; `install-edge-driver` needs Edge
+
+Without root or `sudo`, a subcommand that would run the package manager or write to a directory the job user can't write fails before downloading anything, and says which. The drivers (`install-chromedriver` outside Alpine, `install-geckodriver`, `install-edge-driver`) need neither when `--install-dir` is writable.
 
 ## Examples
 

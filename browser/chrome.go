@@ -42,6 +42,9 @@ func (i *Installer) InstallChrome(ctx context.Context, opts ChromeOptions) error
 	if i.chromeAlreadyInstalled(ctx, target, opts) {
 		return nil
 	}
+	if err := i.requirePrivilege("Chrome", "run "+i.chromeInstaller()); err != nil {
+		return err
+	}
 
 	if err := i.installChromeForPlatform(ctx, target, requested, opts); err != nil {
 		return err
