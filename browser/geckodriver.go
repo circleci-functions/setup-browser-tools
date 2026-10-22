@@ -72,11 +72,18 @@ func (i *Installer) resolveGeckodriverTag(ctx context.Context, requested string)
 	return tag, nil
 }
 
-// geckodriverPlatform mirrors the orb, which uses the aarch64 build for any
-// macOS host rather than distinguishing Intel.
+// geckodriverPlatform picks the release asset for the host. Unlike the orb,
+// Intel Macs get the x86-64 macos build: up to v0.36.0 macos-aarch64 is
+// arm64-only.
 func (i *Installer) geckodriverPlatform() string {
 	if i.Platform.IsMacOS() {
+		if i.Platform.Arch == ArchAMD64 {
+			return "macos"
+		}
 		return "macos-aarch64"
+	}
+	if i.Platform.Arch == ArchARM64 {
+		return "linux-aarch64"
 	}
 	return "linux64"
 }

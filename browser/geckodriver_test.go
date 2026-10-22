@@ -59,6 +59,20 @@ func TestGeckodriverURL(t *testing.T) {
 			want:   "https://github.com/mozilla/geckodriver/releases/download/v0.36.0/geckodriver-v0.36.0-linux64.tar.gz",
 		},
 		{
+			name:   "linux arm64",
+			distro: DistroDebian,
+			arch:   ArchARM64,
+			tag:    "v0.36.0",
+			want:   "https://github.com/mozilla/geckodriver/releases/download/v0.36.0/geckodriver-v0.36.0-linux-aarch64.tar.gz",
+		},
+		{
+			name:   "alpine arm64 takes the same static build",
+			distro: DistroAlpine,
+			arch:   ArchARM64,
+			tag:    "v0.37.1",
+			want:   "https://github.com/mozilla/geckodriver/releases/download/v0.37.1/geckodriver-v0.37.1-linux-aarch64.tar.gz",
+		},
+		{
 			name:   "macOS arm64",
 			distro: DistroMacOS,
 			arch:   ArchARM64,
@@ -66,11 +80,11 @@ func TestGeckodriverURL(t *testing.T) {
 			want:   "https://github.com/mozilla/geckodriver/releases/download/v0.36.0/geckodriver-v0.36.0-macos-aarch64.tar.gz",
 		},
 		{
-			name:   "macOS amd64 still uses the aarch64 build, as the orb does",
+			name:   "macOS amd64 uses the x86-64 build",
 			distro: DistroMacOS,
 			arch:   ArchAMD64,
 			tag:    "v0.35.0",
-			want:   "https://github.com/mozilla/geckodriver/releases/download/v0.35.0/geckodriver-v0.35.0-macos-aarch64.tar.gz",
+			want:   "https://github.com/mozilla/geckodriver/releases/download/v0.35.0/geckodriver-v0.35.0-macos.tar.gz",
 		},
 	}
 

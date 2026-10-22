@@ -35,7 +35,7 @@ type installBrowserToolsCmd struct {
 	Geckodriver  bool `help:"Install geckodriver." default:"true" negatable:""`
 
 	ChromeForTesting       bool `help:"Install Chrome for Testing." default:"false"`
-	ChromeForTestingDriver bool `help:"Install the Chrome for Testing ChromeDriver alongside Chrome for Testing." default:"false"`
+	ChromeForTestingDriver bool `help:"Install the Chrome for Testing ChromeDriver alongside Chrome for Testing, in place of the default ChromeDriver. Passing --chromedriver as well is an error." default:"false"`
 	Edge                   bool `help:"Install Microsoft Edge." default:"false"`
 	EdgeDriver             bool `help:"Install Edge WebDriver." default:"false"`
 

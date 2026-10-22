@@ -45,7 +45,7 @@ The full `github.com/` path and the `--` separator are both required. A bare
 | `--firefox` / `--no-firefox` | bool | `true` | Install Firefox |
 | `--geckodriver` / `--no-geckodriver` | bool | `true` | Install geckodriver |
 | `--chrome-for-testing` | bool | `false` | Install Chrome for Testing |
-| `--chrome-for-testing-driver` | bool | `false` | Install the Chrome for Testing ChromeDriver alongside it |
+| `--chrome-for-testing-driver` | bool | `false` | Install the Chrome for Testing ChromeDriver alongside it, in place of the default ChromeDriver. Passing `--chromedriver` as well is an error. |
 | `--edge` | bool | `false` | Install Microsoft Edge |
 | `--edge-driver` | bool | `false` | Install Edge WebDriver |
 | `--chrome-version` | string | `latest` | Version of Chrome to install |
@@ -117,6 +117,8 @@ The full `github.com/` path and the `--` separator are both required. A bare
 `latest` resolves the current stable release from the vendor. Any other value is installed as given.
 
 A version may reference an environment variable, as `$NAME` or `${NAME}`. A reference to a variable that is unset, or set to the empty string, is an error rather than an empty version — so a typo fails immediately instead of building a broken download URL.
+
+`install-chromedriver` and `install-edge-driver` pick the driver for the installed browser. When none was published for that exact build, ChromeDriver falls back to the newest driver for the same milestone, and Edge WebDriver to the newest for the same major version.
 
 ## Job cache
 
@@ -193,12 +195,12 @@ Coverage varies by browser, because the vendors publish different builds.
 
 | | macOS | Debian/Ubuntu | Alpine | RHEL/CentOS | Linux ARM64 | Windows |
 |---|---|---|---|---|---|---|
-| `install-chrome` | yes | yes | yes, as Chromium | yes | no | no |
-| `install-chromedriver` | yes | yes | yes | `unzip` only | no | no |
+| `install-chrome` | yes | yes | yes, as Chromium | yes | Alpine only, as Chromium | no |
+| `install-chromedriver` | yes | yes | yes | `unzip` only | Alpine only | no |
 | `install-firefox` | yes | yes | no | yes | no | no |
-| `install-geckodriver` | yes | yes | yes | yes | no | no |
+| `install-geckodriver` | yes | yes | yes | yes | yes | no |
 | `install-chrome-for-testing` | yes | yes | no | no | no | no |
 | `install-edge` | yes | yes | no | no | no | no |
 | `install-edge-driver` | yes | yes | no | no | no | no |
 
-Asking for a browser on a platform it is not published for is an error. The exception is `install-browser-tools`: a component that is on only by default is warned about and skipped, so a bare run on Alpine installs Chromium and ChromeDriver and reports why it skipped Firefox and geckodriver. Naming that component explicitly makes it an error instead.
+Asking for a browser on a platform it is not published for is an error. The exception is `install-browser-tools`: a component that is on only by default is warned about and skipped, so a bare run on Alpine installs Chromium, ChromeDriver and geckodriver, and reports why it skipped Firefox. Naming that component explicitly makes it an error instead.

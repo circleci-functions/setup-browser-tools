@@ -1,7 +1,9 @@
 package browser
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf16"
 )
 
 const (
@@ -48,7 +51,8 @@ func (f Fetcher) JSON(ctx context.Context, rawURL string, out any) error {
 }
 
 // Text fetches rawURL and trims surrounding whitespace. Some version endpoints
-// serve a bare version string rather than JSON.
+// serve a bare version string rather than JSON, and Microsoft's serve it as
+// UTF-16 with a byte-order mark, so a marked body is decoded first.
 func (f Fetcher) Text(ctx context.Context, rawURL string) (string, error) {
 	body, err := f.get(ctx, rawURL)
 	if err != nil {
@@ -60,7 +64,26 @@ func (f Fetcher) Text(ctx context.Context, rawURL string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read %s: %w", rawURL, err)
 	}
-	return strings.TrimSpace(string(b)), nil
+	return strings.TrimSpace(decodeText(b)), nil
+}
+
+func decodeText(b []byte) string {
+	switch {
+	case bytes.HasPrefix(b, []byte{0xFF, 0xFE}):
+		return decodeUTF16(b[2:], binary.LittleEndian)
+	case bytes.HasPrefix(b, []byte{0xFE, 0xFF}):
+		return decodeUTF16(b[2:], binary.BigEndian)
+	default:
+		return string(bytes.TrimPrefix(b, []byte{0xEF, 0xBB, 0xBF}))
+	}
+}
+
+func decodeUTF16(b []byte, order binary.ByteOrder) string {
+	units := make([]uint16, len(b)/2)
+	for n := range units {
+		units[n] = order.Uint16(b[2*n:])
+	}
+	return string(utf16.Decode(units))
 }
 
 // Exists distinguishes a version that was never published from a transport

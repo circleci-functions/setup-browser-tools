@@ -169,24 +169,71 @@ func (i *Installer) InstallEdgeDriver(ctx context.Context, opts EdgeDriverOption
 	}
 	i.logf("installed Edge is %s", version)
 
-	url := i.edgeDriverURL(version)
+	driverVersion, err := i.resolveEdgeDriver(ctx, version)
+	if err != nil {
+		return err
+	}
+
+	url := i.edgeDriverURL(driverVersion)
 	if err := i.downloadAndInstallBinary(ctx, url, "msedgedriver", opts.InstallDir, "edgedriver.zip"); err != nil {
 		return err
 	}
 
 	installed, found := i.installedDriverVersion(ctx, "msedgedriver")
 	if !found {
-		return fmt.Errorf("no working msedgedriver on PATH after installing %s", version)
+		return fmt.Errorf("no working msedgedriver on PATH after installing %s", driverVersion)
 	}
-	if installed != version {
-		return fmt.Errorf("installed Edge WebDriver is %s, but Edge is %s", installed, version)
+	if !sameMajor(installed, version) {
+		return fmt.Errorf("installed Edge WebDriver is %s, which does not match Edge %s", installed, version)
 	}
 	i.logf("installed Edge WebDriver %s", installed)
 	RecordVersion(i.Out, "Edge WebDriver", installed)
 	return nil
 }
 
+// resolveEdgeDriver returns the driver version to install for an Edge version:
+// that same version when Microsoft published a driver for it, and otherwise the
+// newest driver for its major version, as ChromeDriver falls back to the newest
+// build for its milestone.
+func (i *Installer) resolveEdgeDriver(ctx context.Context, edgeVersion string) (string, error) {
+	published, err := i.Fetcher.Exists(ctx, i.edgeDriverURL(edgeVersion))
+	if err != nil {
+		return "", err
+	}
+	if published {
+		return edgeVersion, nil
+	}
+
+	major, err := majorVersion(edgeVersion)
+	if err != nil {
+		return "", err
+	}
+	endpoint := fmt.Sprintf("%s/LATEST_RELEASE_%d_%s", i.Endpoints.MSEdgeDriver, major, i.edgeDriverOS())
+	latest, err := i.Fetcher.Text(ctx, endpoint)
+	if err != nil {
+		return "", fmt.Errorf("no Edge WebDriver published for %s or for major version %d: %w", edgeVersion, major, err)
+	}
+	if !sameMajor(latest, edgeVersion) {
+		return "", fmt.Errorf("%s reported Edge WebDriver %q, which is not major version %d", endpoint, latest, major)
+	}
+
+	i.logf("no Edge WebDriver published for exactly %s; falling back to %s, the newest build for major version %d", edgeVersion, latest, major)
+	return latest, nil
+}
+
+// edgeDriverOS is the platform suffix of the LATEST_RELEASE_<major>_<os>
+// endpoints.
+func (i *Installer) edgeDriverOS() string {
+	if i.Platform.IsMacOS() {
+		return "MACOS"
+	}
+	return "LINUX"
+}
+
 func (i *Installer) edgeDriverPlatform() string {
+	if i.Platform.IsMacOS() && i.Platform.Arch == ArchAMD64 {
+		return "mac64"
+	}
 	if i.Platform.IsMacOS() {
 		return "mac64_m1"
 	}
