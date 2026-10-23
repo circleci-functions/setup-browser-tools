@@ -27,7 +27,6 @@ jobs:
     executor: go
     steps:
       - checkout
-      - toolkit/private-mod-init
       - restore_cache:
           keys:
             - setup-browser-tools-go-{{ checksum "go.sum" }}-
@@ -47,7 +46,6 @@ jobs:
     executor: go
     steps:
       - checkout
-      - toolkit/private-mod-init
       - restore_cache:
           keys:
             - setup-browser-tools-go-{{ checksum "go.sum" }}-
@@ -289,10 +287,8 @@ jobs:
 workflows:
   test-publish:
     jobs:
-      - test:
-          context: [github-readonly]
-      - build:
-          context: [github-readonly]
+      - test
+      - build
       # install-debian-chrome and install-alpine-chrome gate publish: they cover
       # the path with a real internal caller and the Chromium-on-musl path
       # respectively. Promoted after the whole matrix went green in a full run.
@@ -303,40 +299,28 @@ workflows:
       # merge is a branch-protection setting, not something this config expresses.
       - install-debian-chrome:
           requires: [build]
-          context: [github-readonly]
       - install-alpine-chrome:
           requires: [build]
-          context: [github-readonly]
       - install-debian-default-set:
           requires: [build]
-          context: [github-readonly]
       - install-alpine-default-set:
           requires: [build]
-          context: [github-readonly]
       - install-alpine-explicit-firefox-fails:
           requires: [build]
-          context: [github-readonly]
       - install-alpine-arm64-default-set:
           requires: [build]
-          context: [github-readonly]
       - install-debian-arm64-geckodriver:
           requires: [build]
-          context: [github-readonly]
       - install-rhel-chrome:
           requires: [build]
-          context: [github-readonly]
       - install-debian-bare-firefox-edge:
           requires: [build]
-          context: [github-readonly]
       - install-macos-chrome:
           requires: [build]
-          context: [github-readonly]
       - install-macos-edge:
           requires: [build]
-          context: [github-readonly]
       - install-debian-opt-in-set:
           requires: [build]
-          context: [github-readonly]
       - toolkit/release-pr:
           name: release-pr
           executor: go
