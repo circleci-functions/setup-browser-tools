@@ -3,6 +3,7 @@ package browser
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -19,10 +20,6 @@ type ChromeOptions struct {
 	UseCache        bool
 	CacheKey        string
 }
-
-// chromeLinuxTree is where the Debian package puts Chrome, and so what gets
-// cached on Linux.
-const chromeLinuxTree = "/opt/google/chrome"
 
 func (i *Installer) InstallChrome(ctx context.Context, opts ChromeOptions) error {
 	if i.Platform.IsLinuxARM64() && i.Platform.Distro != DistroAlpine {
@@ -57,8 +54,11 @@ func (i *Installer) InstallChrome(ctx context.Context, opts ChromeOptions) error
 	i.logf("installed Chrome %s", installed)
 	RecordVersion(i.Out, "Chrome", installed)
 
-	if opts.UseCache {
-		i.Cache.Save(ctx, ChromeCacheKey(i.Host, opts.CacheKey, opts.Channel, target), []string{chromeLinuxTree})
+	if opts.UseCache && i.chromePackageCached() {
+		key := ChromeCacheKey(i.Host, opts.CacheKey, opts.Channel, target)
+		if dir, err := chromeCacheDir(key); err == nil {
+			i.Cache.Save(ctx, key, []string{dir})
+		}
 	}
 	return nil
 }
@@ -181,8 +181,8 @@ func (i *Installer) removeChrome(ctx context.Context, channel string) {
 }
 
 func (i *Installer) installChromeForPlatform(ctx context.Context, target, requested string, opts ChromeOptions) error {
-	if opts.UseCache && i.restoreChromeFromCache(ctx, target, opts) {
-		return nil
+	if opts.UseCache && i.chromePackageCached() {
+		return i.installChromeWithCache(ctx, target, requested, opts)
 	}
 
 	switch i.Platform.Distro {
@@ -199,30 +199,36 @@ func (i *Installer) installChromeForPlatform(ctx context.Context, target, reques
 	}
 }
 
-// restoreChromeFromCache is Linux-only: on macOS Chrome lives in /Applications
-// and has to be registered by the installer, so there is no tree to drop back
-// into place.
-func (i *Installer) restoreChromeFromCache(ctx context.Context, target string, opts ChromeOptions) bool {
-	if i.Platform.IsMacOS() {
-		return false
-	}
-	key := ChromeCacheKey(i.Host, opts.CacheKey, opts.Channel, target)
-	if !i.Cache.Restore(ctx, key, chromeLinuxTree) {
-		return false
-	}
-	return i.linkChromeFromTree(ctx, opts.Channel) == nil
+// chromePackageCached reports whether --use-cache applies here. It caches the
+// Debian or RHEL package, so a restore installs Chrome's libraries too; Alpine
+// and macOS have no such package.
+func (i *Installer) chromePackageCached() bool {
+	return i.Platform.Distro == DistroDebian || i.Platform.Distro == DistroRHEL
 }
 
-// linkChromeFromTree recreates the symlinks the Debian package would have made,
-// which a restored tree does not carry.
-func (i *Installer) linkChromeFromTree(ctx context.Context, channel string) error {
-	target := filepath.Join(chromeLinuxTree, "google-chrome")
-	link := filepath.Join("/usr/bin", "google-chrome-"+channel)
+// chromeCacheDir is where the Chrome package for key is kept, in the user's
+// cache directory, since the job cache restores as the job's user.
+func chromeCacheDir(key string) (string, error) {
+	base, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve cache directory: %w", err)
+	}
+	return filepath.Join(base, cacheKeyPrefix, key), nil
+}
 
-	if err := i.Runner.Exec(ctx, "ln", "-sf", target, link); err != nil {
+// installChromeWithCache installs the Chrome package restored from the job
+// cache, downloading it first on a miss.
+func (i *Installer) installChromeWithCache(ctx context.Context, target, requested string, opts ChromeOptions) error {
+	key := ChromeCacheKey(i.Host, opts.CacheKey, opts.Channel, target)
+	dir, err := chromeCacheDir(key)
+	if err != nil {
 		return err
 	}
-	return i.Runner.Exec(ctx, "ln", "-sf", link, "/usr/bin/google-chrome")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return err
+	}
+	i.Cache.Restore(ctx, key, dir)
+	return i.installChromePackage(ctx, dir, target, requested, opts.Channel)
 }
 
 func (i *Installer) installChromeAlpine(ctx context.Context) error {
@@ -305,12 +311,7 @@ func (i *Installer) installChromeRHEL(ctx context.Context, target, requested, ch
 		return err
 	}
 	defer cleanup()
-
-	rpm, err := i.Fetcher.Download(ctx, i.chromeRPMURL(target, requested, channel), dir, "google-chrome.rpm")
-	if err != nil {
-		return err
-	}
-	return i.Runner.Exec(ctx, "yum", "install", "-y", rpm)
+	return i.installChromePackage(ctx, dir, target, requested, channel)
 }
 
 func (i *Installer) chromeRPMURL(target, requested, channel string) string {
@@ -325,7 +326,7 @@ func (i *Installer) installChromeDebian(ctx context.Context, target, requested, 
 	if requested == Latest {
 		return i.installChromeDebianRepo(ctx, channel)
 	}
-	return i.installChromeDebianPackage(ctx, target, channel)
+	return i.installChromeDebianPackage(ctx, target, requested, channel)
 }
 
 func (i *Installer) installChromeDebianRepo(ctx context.Context, channel string) error {
@@ -370,27 +371,47 @@ func (i *Installer) installChromeDebianRepo(ctx context.Context, channel string)
 
 // installChromeDebianPackage fetches a specific .deb, since Google keeps only the
 // current release in the apt repo.
-func (i *Installer) installChromeDebianPackage(ctx context.Context, target, channel string) error {
+func (i *Installer) installChromeDebianPackage(ctx context.Context, target, requested, channel string) error {
 	dir, cleanup, err := TempDir("chrome")
 	if err != nil {
 		return err
 	}
 	defer cleanup()
+	return i.installChromePackage(ctx, dir, target, requested, channel)
+}
 
-	deb, err := i.Fetcher.Download(ctx, i.chromeDebURL(target, channel), dir, "chrome.deb")
-	if err != nil {
-		return err
+// installChromePackage installs Chrome's Debian or RHEL package from dir,
+// downloading it there first unless it is already there. The package manager
+// installs the libraries Chrome needs along with it.
+func (i *Installer) installChromePackage(ctx context.Context, dir, target, requested, channel string) error {
+	url, name := i.chromeDebURL(target, requested, channel), "chrome.deb"
+	if i.Platform.Distro == DistroRHEL {
+		url, name = i.chromeRPMURL(target, requested, channel), "google-chrome.rpm"
 	}
 
+	pkg := filepath.Join(dir, name)
+	if !hasContent(pkg) {
+		if _, err := i.Fetcher.Download(ctx, url, dir, name); err != nil {
+			return err
+		}
+	}
+
+	if i.Platform.Distro == DistroRHEL {
+		return i.Runner.Exec(ctx, "yum", "install", "-y", pkg)
+	}
 	if err := i.Runner.AptUpdate(ctx); err != nil {
 		return err
 	}
-	return i.aptInstall(ctx, deb)
+	return i.aptInstall(ctx, pkg)
 }
 
-// chromeDebURL builds the pooled package URL from the resolved version. The orb
-// built this from the raw flag instead, so an unexpanded $VAR reached the URL.
-func (i *Installer) chromeDebURL(target, channel string) string {
+// chromeDebURL builds the pooled package URL from the resolved version, or the
+// current-release one for latest. The orb built this from the raw flag
+// instead, so an unexpanded $VAR reached the URL.
+func (i *Installer) chromeDebURL(target, requested, channel string) string {
+	if requested == Latest {
+		return fmt.Sprintf("%s/direct/google-chrome-%s_current_amd64.deb", i.Endpoints.GoogleLinux, channel)
+	}
 	return fmt.Sprintf("%s/chrome/deb/pool/main/g/google-chrome-%s/google-chrome-%s_%s-1_amd64.deb",
 		i.Endpoints.GoogleLinux, channel, channel, target)
 }

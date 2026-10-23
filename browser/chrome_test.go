@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -97,13 +99,18 @@ func TestChromeURLs(t *testing.T) {
 		},
 		{
 			name: "pinned deb comes from the resolved version",
-			got:  i.chromeDebURL("147.0.7727.55", ChannelStable),
+			got:  i.chromeDebURL("147.0.7727.55", "147.0.7727.55", ChannelStable),
 			want: "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_147.0.7727.55-1_amd64.deb",
 		},
 		{
 			name: "pinned deb on beta",
-			got:  i.chromeDebURL("147.0.7727.55", ChannelBeta),
+			got:  i.chromeDebURL("147.0.7727.55", "147.0.7727.55", ChannelBeta),
 			want: "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-beta/google-chrome-beta_147.0.7727.55-1_amd64.deb",
+		},
+		{
+			name: "latest deb uses the current-release path",
+			got:  i.chromeDebURL("147.0.7727.55", Latest, ChannelStable),
+			want: "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb",
 		},
 		{
 			name: "latest rpm uses the current-release path",
@@ -382,7 +389,7 @@ func TestInstallChromeDebianPinnedUsesResolvedVersion(t *testing.T) {
 	i, calls := testInstaller(t, installerOpts{distro: DistroDebian, endpoint: srv.URL})
 	i.Fetcher = Fetcher{HTTPClient: srv.Client()}
 
-	assert.NilError(t, i.installChromeDebianPackage(context.Background(), "147.0.7727.55", ChannelStable))
+	assert.NilError(t, i.installChromeDebianPackage(context.Background(), "147.0.7727.55", "147.0.7727.55", ChannelStable))
 
 	// The orb built this URL from the raw flag rather than the resolved version,
 	// so an unexpanded $VAR reached the URL.
@@ -401,6 +408,38 @@ func TestInstallChromeDebianPinnedUsesResolvedVersion(t *testing.T) {
 	assert.Assert(t, strings.HasSuffix(aptInstall.args[len(aptInstall.args)-1], "chrome.deb"),
 		"apt-get should install the downloaded file, got %v", aptInstall.args)
 	assert.DeepEqual(t, aptInstall.env, []string{"DEBIAN_FRONTEND=noninteractive"})
+}
+
+func TestInstallChromeWithCacheInstallsTheCachedPackage(t *testing.T) {
+	for _, cached := range []bool{true, false} {
+		t.Run(fmt.Sprintf("cached=%v", cached), func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("XDG_CACHE_HOME", t.TempDir())
+			var requested []string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requested = append(requested, r.URL.Path)
+				fmt.Fprint(w, "deb-contents")
+			}))
+			defer srv.Close()
+
+			i, calls := testInstaller(t, installerOpts{distro: DistroDebian, endpoint: srv.URL})
+			i.Fetcher = Fetcher{HTTPClient: srv.Client()}
+			opts := ChromeOptions{Channel: ChannelStable, CacheKey: "v1", UseCache: true}
+			dir, err := chromeCacheDir(ChromeCacheKey(i.Host, opts.CacheKey, opts.Channel, "147.0.7727.55"))
+			assert.NilError(t, err)
+			pkg := filepath.Join(dir, "chrome.deb")
+			if cached {
+				assert.NilError(t, os.MkdirAll(dir, 0o750))
+				assert.NilError(t, os.WriteFile(pkg, []byte("deb-contents"), 0o600))
+			}
+
+			assert.NilError(t, i.installChromeWithCache(context.Background(), "147.0.7727.55", "147.0.7727.55", opts))
+
+			assert.Equal(t, len(requested) == 0, cached, "requested %v", requested)
+			last := (*calls)[len(*calls)-1]
+			assert.DeepEqual(t, append([]string{last.name}, last.args...), []string{"apt-get", "install", "-y", pkg})
+		})
+	}
 }
 
 func TestInstallChromeRejectsLinuxARM64(t *testing.T) {
