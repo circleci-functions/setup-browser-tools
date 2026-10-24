@@ -42,7 +42,7 @@ The full `github.com/` path and the `--` separator are both required. A bare
 - **Installs individually**, so a job can take only what it needs
 - **Pins versions**, or resolves the latest release from the vendor
 - **Verifies downloads**: SHA-256/512 checksums for Firefox, plus OpenPGP signature verification of the checksum manifest
-- **Caches** the Firefox installer, and the installed Chrome on Debian/Ubuntu and RHEL, via the CircleCI job cache, for when downloads are unreliable
+- **Caches** the Firefox installer, and the Chrome package on Debian/Ubuntu and RHEL, via the CircleCI job cache, for when downloads are unreliable
 - **Records what it installed** in `$HOME/.browser-versions`, one line per browser
 - Reads a version from an environment variable, so `--version "$CHROME_VERSION"` works
 
@@ -92,7 +92,7 @@ The full `github.com/` path and the `--` separator are both required. A bare
 | `--version` | string | `latest` | Version to install, e.g. `147.0.7727.55` |
 | `--channel` | enum | `stable` | Release channel: `stable` or `beta` |
 | `--replace-existing` | bool | `false` | Replace an existing Chrome of the same channel when it is a different version. Without it, an installed Chrome of that channel is kept whatever its version. |
-| `--use-cache` | bool | `false` | Restore and save Chrome via the job cache |
+| `--use-cache` | bool | `false` | Restore and save the Chrome package via the job cache |
 | `--cache-key` | string | `v1` | Cache key prefix, for invalidating cached entries |
 
 ### `install-chromedriver`
@@ -149,7 +149,7 @@ A version may reference an environment variable, as `$NAME` or `${NAME}`. A refe
 
 `install-chrome` and `install-firefox` accept `--use-cache`, which saves to the CircleCI job cache and restores from it on later runs. It increases cost and rarely speeds things up, so it is off by default; reach for it when downloads from a vendor mirror are unreliable.
 
-What is cached differs. For Firefox it is the downloaded installer. For Chrome it is the installed `/opt/google/chrome` tree, and only on Debian/Ubuntu and RHEL: on Alpine and macOS nothing is cached. A restored Chrome skips the package manager, so Chrome's shared-library dependencies are not installed on that run.
+What is cached differs. For Firefox it is the downloaded installer. For Chrome it is the downloaded `.deb` or `.rpm`, kept under the user's cache directory, and only on Debian/Ubuntu and RHEL: on Alpine and macOS nothing is cached. A restored package is installed with apt or yum just as a fresh download is, so Chrome's shared-library dependencies come with it. With `--use-cache`, `latest` on Debian/Ubuntu installs Google's current-release `.deb` rather than adding Google's apt repository.
 
 Keys are:
 
