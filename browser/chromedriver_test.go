@@ -1,8 +1,11 @@
 package browser
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -278,4 +281,105 @@ func TestMajorVersionAndNumericVersion(t *testing.T) {
 			assert.Equal(t, numericVersion(tc.in), tc.wantNumeric)
 		})
 	}
+}
+
+// pathRig is an installer whose PATH lookups are the host's own, over a PATH
+// of temporary directories, for the cases of putOnPath a real install can't
+// cheaply set up. The acceptance suite covers the rest.
+type pathRig struct {
+	installer *Installer
+	bashEnv   string
+	log       *bytes.Buffer
+}
+
+func newPathRig(t *testing.T, path ...string) pathRig {
+	t.Helper()
+	i, _ := testInstaller(t, installerOpts{distro: DistroDebian})
+	i.Host.LookPath = nil
+	log := &bytes.Buffer{}
+	i.Out = log
+	t.Setenv("PATH", strings.Join(append(path, "/usr/bin", "/bin"), string(os.PathListSeparator)))
+	return pathRig{installer: i, bashEnv: os.Getenv("BASH_ENV"), log: log}
+}
+
+// exported is what putOnPath left in $BASH_ENV for later steps.
+func (r pathRig) exported(t *testing.T) string {
+	t.Helper()
+	got, err := os.ReadFile(r.bashEnv)
+	if errors.Is(err, fs.ErrNotExist) {
+		return ""
+	}
+	assert.NilError(t, err)
+	return string(got)
+}
+
+// writeGeckodriver puts an executable geckodriver in dir.
+func writeGeckodriver(t *testing.T, dir string) {
+	t.Helper()
+	assert.NilError(t, os.MkdirAll(dir, 0o750))
+	assert.NilError(t, os.WriteFile(filepath.Join(dir, "geckodriver"), []byte("#!/bin/sh\n"), 0o755)) //nolint:gosec // must be executable
+}
+
+func TestPutOnPathLeavesPathOrderAloneWhenShadowed(t *testing.T) {
+	// The install dir is on PATH behind another copy. Putting it at the front
+	// would also move everything else in it, the default /usr/local/bin
+	// included, ahead of a version manager's shims, so this only warns.
+	shims, installDir := t.TempDir(), t.TempDir()
+	writeGeckodriver(t, shims)
+	writeGeckodriver(t, installDir)
+	rig := newPathRig(t, shims, installDir)
+
+	assert.NilError(t, rig.installer.putOnPath(installDir, "geckodriver"))
+
+	assert.Equal(t, rig.exported(t), "")
+	assert.Assert(t, strings.Contains(rig.log.String(),
+		"PATH resolves geckodriver to "+filepath.Join(shims, "geckodriver")+", ahead of "+filepath.Join(installDir, "geckodriver")),
+		rig.log.String())
+}
+
+func TestPutOnPathDoesNotExportAnUnsafeDirectory(t *testing.T) {
+	// bashenv.AddToPath writes the directory unquoted, so a space would split
+	// the PATH assignment when a later step sources $BASH_ENV.
+	installDir := filepath.Join(t.TempDir(), "my drivers")
+	writeGeckodriver(t, installDir)
+	rig := newPathRig(t)
+
+	assert.NilError(t, rig.installer.putOnPath(installDir, "geckodriver"))
+
+	assert.Equal(t, rig.exported(t), "")
+	assert.Assert(t, strings.Contains(rig.log.String(), "cannot be put on PATH safely"), rig.log.String())
+}
+
+func TestShellSafePath(t *testing.T) {
+	for _, dir := range []string{"/usr/local/bin", "/home/circleci/drivers", "/opt/a.b_c+d@e~f,g=h-i"} {
+		assert.Assert(t, shellSafePath.MatchString(dir), dir)
+	}
+	for _, dir := range []string{"/my drivers", "/a:b", "/a$HOME", "/a`x`", "/a;b", "/a'b", `/a"b`, "/a*b", "/a\tb", ""} {
+		assert.Assert(t, !shellSafePath.MatchString(dir), dir)
+	}
+}
+
+func TestPutOnPathOutsideAJob(t *testing.T) {
+	// Without $BASH_ENV there is nowhere to export to, but the driver is
+	// installed and works by its full path, so that only warns.
+	installDir := t.TempDir()
+	writeGeckodriver(t, installDir)
+	rig := newPathRig(t)
+	t.Setenv("BASH_ENV", "")
+
+	assert.NilError(t, rig.installer.putOnPath(installDir, "geckodriver"))
+
+	assert.Assert(t, strings.Contains(rig.log.String(), "$BASH_ENV is not set"), rig.log.String())
+}
+
+func TestPutOnPathFailsWhenBashEnvCannotBeWritten(t *testing.T) {
+	// $BASH_ENV is set, so this is a job, and later steps were promised the
+	// driver by name; a write that fails has to fail the step.
+	installDir := t.TempDir()
+	writeGeckodriver(t, installDir)
+	rig := newPathRig(t)
+	t.Setenv("BASH_ENV", filepath.Join(t.TempDir(), "missing", "bash_env"))
+
+	err := rig.installer.putOnPath(installDir, "geckodriver")
+	assert.ErrorContains(t, err, "put "+installDir+" on PATH for later steps")
 }

@@ -58,6 +58,10 @@ func testInstaller(t *testing.T, opts installerOpts) (*Installer, *[]invocation)
 		Geteuid:  func() int { return 0 },
 	}
 
+	// A driver install can export to $BASH_ENV, and a test run inside a CircleCI
+	// job must not write into that job's own file.
+	t.Setenv("BASH_ENV", filepath.Join(t.TempDir(), "bash_env"))
+
 	calls := &[]invocation{}
 	endpoints := DefaultEndpoints()
 	if opts.endpoint != "" {

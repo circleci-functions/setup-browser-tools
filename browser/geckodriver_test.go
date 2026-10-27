@@ -101,7 +101,7 @@ func TestInstallGeckodriverSkipsWhenAlreadyAtTheTag(t *testing.T) {
 	// naive comparison would reinstall on every run.
 	i, calls := testInstaller(t, installerOpts{
 		distro:  DistroDebian,
-		onPath:  []string{"geckodriver"},
+		onPath:  []string{"/usr/local/bin/geckodriver"},
 		stdouts: map[string]string{"--version": "geckodriver 0.36.0 ( 2025-01-01)\n"},
 	})
 

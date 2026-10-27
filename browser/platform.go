@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/circleci-functions/toolkit/pathlink"
 )
 
 // Distro identifies a host's package-management family, which is what decides
@@ -125,18 +127,14 @@ func (h Host) has(name string) bool {
 
 // writable reports whether the current user can create files in dir. It tries
 // to, rather than reading permission bits, so a read-only mount or an ACL
-// counts as well.
+// counts as well. A dir that does not exist yet counts when it could be
+// created, since a driver install creates its --install-dir: probing a missing
+// directory can only fail, which would blame privilege for a missing directory.
 func (h Host) writable(dir string) bool {
 	if h.Writable != nil {
 		return h.Writable(dir)
 	}
-	f, err := os.CreateTemp(dir, ".setup-browser-tools-")
-	if err != nil {
-		return false
-	}
-	_ = f.Close()
-	_ = os.Remove(f.Name())
-	return true
+	return pathlink.Writable(dir)
 }
 
 // Detect classifies the host, testing families in the order macOS, Alpine,

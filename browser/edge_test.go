@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -306,9 +307,10 @@ func TestInstallEdgeDriverAcceptsTheMajorFallback(t *testing.T) {
 				map[string]string{"/LATEST_RELEASE_147_LINUX": "147.0.3065.40"},
 			)
 
+			installDir := t.TempDir()
 			i, _ := testInstaller(t, installerOpts{
 				distro: DistroDebian,
-				onPath: []string{"microsoft-edge", "msedgedriver"},
+				onPath: []string{"microsoft-edge", filepath.Join(installDir, "msedgedriver")},
 				stdouts: map[string]string{
 					"microsoft-edge --version": "Microsoft Edge 147.0.3065.51 \n",
 					"msedgedriver --version":   tc.driverBanner,
@@ -317,7 +319,7 @@ func TestInstallEdgeDriverAcceptsTheMajorFallback(t *testing.T) {
 			i.Endpoints.MSEdgeDriver = srv.URL
 			i.Fetcher = Fetcher{HTTPClient: srv.Client()}
 
-			err = i.InstallEdgeDriver(context.Background(), EdgeDriverOptions{InstallDir: t.TempDir()})
+			err = i.InstallEdgeDriver(context.Background(), EdgeDriverOptions{InstallDir: installDir})
 			if tc.wantErr != "" {
 				assert.ErrorContains(t, err, tc.wantErr)
 				return

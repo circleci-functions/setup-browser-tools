@@ -2,11 +2,17 @@ package browser
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/circleci-functions/toolkit/bashenv"
+	"github.com/circleci-functions/toolkit/pathlink"
 )
 
 // Chrome majors below this have no ChromeDriver at all; below
@@ -52,13 +58,14 @@ func (i *Installer) InstallChromeDriver(ctx context.Context, opts ChromeDriverOp
 		return err
 	}
 
-	if installed, found := i.installedDriverVersion(ctx, "chromedriver"); found {
+	driver := filepath.Join(opts.InstallDir, "chromedriver")
+	if installed, found := i.installedDriverVersion(ctx, driver); found {
 		if installed == driverVersion {
-			i.logf("ChromeDriver %s is already installed", installed)
-			return nil
+			i.logf("ChromeDriver %s is already installed in %s", installed, opts.InstallDir)
+			return i.putOnPath(opts.InstallDir, "chromedriver")
 		}
-		i.logf("ChromeDriver %s is installed; replacing it with %s", installed, driverVersion)
-		_ = i.Runner.Exec(ctx, "rm", "-f", filepath.Join(opts.InstallDir, "chromedriver"))
+		i.logf("ChromeDriver %s is installed in %s; replacing it with %s", installed, opts.InstallDir, driverVersion)
+		_ = i.Runner.Exec(ctx, "rm", "-f", driver)
 	}
 	if err := i.requireWritable("ChromeDriver", opts.InstallDir); err != nil {
 		return err
@@ -68,13 +75,13 @@ func (i *Installer) InstallChromeDriver(ctx context.Context, opts ChromeDriverOp
 		return err
 	}
 
-	installed, found := i.installedDriverVersion(ctx, "chromedriver")
+	installed, found := i.installedDriverVersion(ctx, driver)
 	if !found {
-		return fmt.Errorf("no working chromedriver on PATH after installing %s", driverVersion)
+		return fmt.Errorf("no working chromedriver at %s after installing %s", driver, driverVersion)
 	}
 	i.logf("installed ChromeDriver %s", installed)
 	RecordVersion(i.Out, "ChromeDriver", installed)
-	return nil
+	return i.putOnPath(opts.InstallDir, "chromedriver")
 }
 
 // installChromeDriverAlpine short-circuits: Alpine packages the driver alongside
@@ -263,6 +270,11 @@ func (i *Installer) downloadAndInstallBinary(ctx context.Context, url, binary, i
 		return err
 	}
 
+	// An --install-dir that does not exist yet is created, with the same
+	// privilege as the copy into it, rather than left for cp to fail on.
+	if err := i.Runner.Exec(ctx, "mkdir", "-p", installDir); err != nil {
+		return err
+	}
 	dest := filepath.Join(installDir, binary)
 	if err := i.Runner.Exec(ctx, "cp", found, dest); err != nil {
 		return err
@@ -292,6 +304,11 @@ func findFile(root, name string) (string, error) {
 	return found, nil
 }
 
+// installedDriverVersion reports the version binary prints. A driver installed
+// into a directory is passed by its full path, so what gets checked is the copy
+// in that directory, not whichever one PATH happens to resolve; only Alpine's
+// package-managed driver, whose location the job does not choose, is looked up
+// by name.
 func (i *Installer) installedDriverVersion(ctx context.Context, binary string) (string, bool) {
 	if !i.Host.has(binary) {
 		return "", false
@@ -302,6 +319,73 @@ func (i *Installer) installedDriverVersion(ctx context.Context, binary string) (
 	}
 	v := ParseBrowserVersion(banner)
 	return v, v != ""
+}
+
+// putOnPath makes the binary just checked in installDir the one later steps
+// find by name. A step inherits the job's environment rather than the one the
+// previous step left, so an installDir not on PATH is put at the front of it
+// through $BASH_ENV. That reaches bash steps, which run steps are by default.
+//
+// Everything else only warns, since the driver is installed and works by its
+// full path regardless. An installDir already on PATH behind another copy is
+// not moved ahead of it: the default /usr/local/bin would then also jump ahead
+// of a version manager's shims, changing which node or python later steps run.
+// Outside a CircleCI job there is no $BASH_ENV to write to.
+func (i *Installer) putOnPath(installDir, binary string) error {
+	dir, err := filepath.Abs(installDir)
+	if err != nil {
+		return fmt.Errorf("resolve %s: %w", installDir, err)
+	}
+	want := filepath.Join(dir, binary)
+
+	resolved, lookErr := i.Host.lookPath(binary)
+	if lookErr == nil && samePath(resolved, want) {
+		return nil
+	}
+	if slices.Contains(pathlink.SearchDirs(""), dir) {
+		if lookErr == nil {
+			i.logf("PATH resolves %s to %s, ahead of %s; later steps will run that copy unless they call %s or put %s earlier on PATH",
+				binary, resolved, want, want, dir)
+		}
+		return nil
+	}
+
+	reason := dir + " is not on PATH"
+	if lookErr == nil {
+		reason = fmt.Sprintf("PATH resolves %s to %s, and %s is not on PATH", binary, resolved, dir)
+	}
+	// AddToPath writes the directory unquoted, so one the shell would split or
+	// expand when sourcing $BASH_ENV is not written at all.
+	if !shellSafePath.MatchString(dir) {
+		i.logf("%s, and %s cannot be put on PATH safely; later steps should run %s by its full path", reason, dir, want)
+		return nil
+	}
+
+	err = bashenv.AddToPath(dir)
+	if errors.Is(err, bashenv.ErrNoBashEnv) {
+		i.logf("%s, and $BASH_ENV is not set, so later steps will not find %s by name; run it as %s", reason, binary, want)
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("put %s on PATH for later steps: %w", dir, err)
+	}
+	i.logf("%s; put %s at the front of PATH for later steps via $BASH_ENV", reason, dir)
+	return nil
+}
+
+// shellSafePath matches a path bash reads back unchanged from an unquoted
+// PATH assignment. A colon is left out because PATH would split on it.
+var shellSafePath = regexp.MustCompile(`^[A-Za-z0-9._/+@~,=-]+$`)
+
+// samePath reports whether a and b are the same file. A link on PATH to the
+// installed binary runs that binary, so it counts.
+func samePath(a, b string) bool {
+	if filepath.Clean(a) == filepath.Clean(b) {
+		return true
+	}
+	infoA, errA := os.Stat(a)
+	infoB, errB := os.Stat(b)
+	return errA == nil && errB == nil && os.SameFile(infoA, infoB)
 }
 
 func majorVersion(version string) (int, error) {

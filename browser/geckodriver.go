@@ -27,13 +27,14 @@ func (i *Installer) InstallGeckodriver(ctx context.Context, opts GeckodriverOpti
 	// Releases are tagged v0.36.0 but the binary reports 0.36.0.
 	wanted := strings.TrimPrefix(tag, "v")
 
-	if installed, found := i.installedDriverVersion(ctx, "geckodriver"); found {
+	driver := filepath.Join(opts.InstallDir, "geckodriver")
+	if installed, found := i.installedDriverVersion(ctx, driver); found {
 		if installed == wanted {
-			i.logf("geckodriver %s is already installed", installed)
-			return nil
+			i.logf("geckodriver %s is already installed in %s", installed, opts.InstallDir)
+			return i.putOnPath(opts.InstallDir, "geckodriver")
 		}
-		i.logf("geckodriver %s is installed; replacing it with %s", installed, wanted)
-		_ = i.Runner.Exec(ctx, "rm", "-f", filepath.Join(opts.InstallDir, "geckodriver"))
+		i.logf("geckodriver %s is installed in %s; replacing it with %s", installed, opts.InstallDir, wanted)
+		_ = i.Runner.Exec(ctx, "rm", "-f", driver)
 	}
 
 	if err := i.requireWritable("geckodriver", opts.InstallDir); err != nil {
@@ -45,16 +46,16 @@ func (i *Installer) InstallGeckodriver(ctx context.Context, opts GeckodriverOpti
 		return err
 	}
 
-	installed, found := i.installedDriverVersion(ctx, "geckodriver")
+	installed, found := i.installedDriverVersion(ctx, driver)
 	if !found {
-		return fmt.Errorf("no working geckodriver on PATH after installing %s", tag)
+		return fmt.Errorf("no working geckodriver at %s after installing %s", driver, tag)
 	}
 	if installed != wanted {
 		return fmt.Errorf("installed geckodriver is %s, but %s was requested", installed, wanted)
 	}
 	i.logf("installed geckodriver %s", installed)
 	RecordVersion(i.Out, "geckodriver", installed)
-	return nil
+	return i.putOnPath(opts.InstallDir, "geckodriver")
 }
 
 // resolveGeckodriverTag turns "latest" into a concrete tag by following the

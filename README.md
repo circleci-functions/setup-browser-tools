@@ -181,6 +181,18 @@ A version may reference an environment variable, as `$NAME` or `${NAME}`. A refe
 
 `install-chromedriver` and `install-edge-driver` pick the driver for the installed browser. When none was published for that exact build, ChromeDriver falls back to the newest driver for the same milestone, and Edge WebDriver to the newest for the same major version.
 
+## Driver install directory
+
+ChromeDriver, geckodriver, Edge WebDriver and the Chrome for Testing driver go into `--install-dir`, which is created if it doesn't exist. The driver is checked there, by its full path, so a copy elsewhere on `PATH` neither stands in for it nor fails the check.
+
+When `--install-dir` isn't on `PATH`, it is put at the front of `PATH` for later steps, through `$BASH_ENV`. That reaches `bash` steps, which `run` steps are by default; a step in another shell has to call the driver by its full path. The default, `/usr/local/bin`, is already on `PATH`, so nothing is exported.
+
+The install only warns, and changes nothing, when:
+
+- `--install-dir` is on `PATH` but an earlier entry holds another copy of the driver. Moving the directory forward would also move everything else in it ahead of, say, a version manager's shims. Call the driver by its full path, or reorder `PATH`.
+- The directory's path has whitespace or a shell metacharacter in it, so it can't be written to `$BASH_ENV` safely. Call the driver by its full path.
+- There is no `$BASH_ENV`, as outside a CircleCI job.
+
 ## Job cache
 
 `install-chrome` and `install-firefox` accept `--use-cache`, which saves to the CircleCI job cache and restores from it on later runs. It increases cost and rarely speeds things up, so it is off by default; reach for it when downloads from a vendor mirror are unreliable.
@@ -219,7 +231,7 @@ set it there:
 - `install-chromedriver` needs Chrome already installed; `install-edge-driver` needs Edge
 - `start-xvfb` and `--xvfb` need `$BASH_ENV`, which CircleCI sets in every job, to pass `DISPLAY` on
 
-Without root or `sudo`, a subcommand that would run the package manager or write to a directory the job user can't write fails before downloading anything, and says which. The drivers (`install-chromedriver` outside Alpine, `install-geckodriver`, `install-edge-driver`) need neither when `--install-dir` is writable.
+Without root or `sudo`, a subcommand that would run the package manager or write to a directory the job user can't write fails before downloading anything, and says which. The drivers (`install-chromedriver` outside Alpine, `install-geckodriver`, `install-edge-driver`) need neither when `--install-dir` is writable, or doesn't exist yet and can be created.
 
 ## Examples
 

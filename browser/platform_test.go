@@ -10,14 +10,28 @@ import (
 	"gotest.tools/v3/assert"
 )
 
+// fakePath resolves binaries as a PATH holding present would. A bare name is a
+// binary in /usr/bin; an absolute path is that binary, in a directory on PATH.
+// Each resolves by name or by its full path, and for a name in more than one
+// directory the first wins, as on PATH.
 func fakePath(present ...string) func(string) (string, error) {
-	set := make(map[string]bool, len(present))
-	for _, name := range present {
-		set[name] = true
+	byName := make(map[string]string, len(present))
+	files := make(map[string]bool, len(present))
+	for _, p := range present {
+		if !filepath.IsAbs(p) {
+			p = filepath.Join("/usr/bin", p)
+		}
+		files[p] = true
+		if _, seen := byName[filepath.Base(p)]; !seen {
+			byName[filepath.Base(p)] = p
+		}
 	}
 	return func(name string) (string, error) {
-		if set[name] {
-			return filepath.Join("/usr/bin", name), nil
+		if filepath.IsAbs(name) && files[name] {
+			return name, nil
+		}
+		if p, ok := byName[name]; ok {
+			return p, nil
 		}
 		return "", fmt.Errorf("%s: not found", name)
 	}

@@ -108,6 +108,13 @@ jobs:
       - acceptance:
           run: TestAcceptanceXvfb
 
+  # Drivers installed into a --install-dir that is missing and off PATH, which
+  # a later step has to find there by name.
+  acceptance-debian-driver-install-dir:
+    executor: debian
+    steps:
+      - acceptance:
+          run: TestAcceptanceDriverInstallDir
 
   # Real installs against real images. Nothing else in this repo executes an
   # install: the unit tests assert against the same reading of the orb that let
@@ -390,6 +397,8 @@ workflows:
       - acceptance-debian-xvfb:
           requires: [build]
       - acceptance-alpine-xvfb:
+          requires: [build]
+      - acceptance-debian-driver-install-dir:
           requires: [build]
       - toolkit/release-pr:
           name: release-pr
