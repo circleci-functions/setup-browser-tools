@@ -173,13 +173,14 @@ func TestStartXvfbFailsUpFront(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			x := &fakeX{up: true}
+			i, calls, _ := xvfbInstaller(t, x, installerOpts{distro: DistroDebian})
+			// After the installer, which points $BASH_ENV at a temp file.
 			if tc.bashEnv {
 				withBashEnv(t)
 			} else {
 				t.Setenv("BASH_ENV", "")
 			}
-			x := &fakeX{up: true}
-			i, calls, _ := xvfbInstaller(t, x, installerOpts{distro: DistroDebian})
 			i.Runner.Priv = tc.priv
 
 			err := i.StartXvfb(context.Background(), tc.opts)
@@ -195,9 +196,9 @@ func TestStartXvfbFailsUpFront(t *testing.T) {
 }
 
 func TestBrowserToolsChecksXvfbBeforeInstalling(t *testing.T) {
-	t.Setenv("BASH_ENV", "")
 	x := &fakeX{upAfter: 0}
 	i, _, _ := xvfbInstaller(t, x, installerOpts{distro: DistroDebian})
+	t.Setenv("BASH_ENV", "")
 	var ran []string
 	stubComponents(i, map[string]error{}, &ran)
 
