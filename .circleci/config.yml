@@ -108,6 +108,14 @@ jobs:
       - acceptance:
           run: TestAcceptanceXvfb
 
+  # Drivers installed into a --install-dir that is missing and off PATH, which
+  # a later step has to find there by name.
+  acceptance-debian-driver-install-dir:
+    executor: debian
+    steps:
+      - acceptance:
+          run: TestAcceptanceDriverInstallDir
+
   # Real installs against real images. Nothing else in this repo executes an
   # install: the unit tests assert against the same reading of the orb that let
   # its own missing-else branches survive, so this is the only thing that can
@@ -336,39 +344,6 @@ jobs:
             chrome --version
             chromedriver --version
 
-  # A driver --install-dir that doesn't exist and isn't on PATH. The install has
-  # to create it and pass its own check, and only a later step can show that
-  # the $BASH_ENV export put the drivers on PATH.
-  install-debian-driver-install-dir:
-    executor: debian
-    steps:
-      - checkout
-      - attach_workspace:
-          at: .
-      - run:
-          name: install-geckodriver and install-chromedriver into a directory off PATH
-          command: |
-            DIR=/home/circleci/drivers
-            if [ -e "$DIR" ] || [[ ":$PATH:" == *":$DIR:"* ]]; then
-              echo "FAIL: $DIR is meant to start missing and off PATH" >&2
-              exit 1
-            fi
-            BIN=./dist/setup-browser-tools/linux/amd64/setup-browser-tools
-            "$BIN" install-geckodriver --install-dir "$DIR"
-            "$BIN" install-chrome
-            "$BIN" install-chromedriver --install-dir "$DIR"
-      - run:
-          name: Assert a later step resolves both drivers from the directory
-          command: |
-            for driver in geckodriver chromedriver; do
-              resolved=$(command -v "$driver")
-              if [ "$resolved" != "/home/circleci/drivers/$driver" ]; then
-                echo "FAIL: $driver resolves to '$resolved'" >&2
-                exit 1
-              fi
-              "$driver" --version | grep -E '[0-9]+\.[0-9]+\.[0-9]+'
-            done
-
 workflows:
   test-publish:
     jobs:
@@ -412,7 +387,7 @@ workflows:
           requires: [build]
       - acceptance-alpine-xvfb:
           requires: [build]
-      - install-debian-driver-install-dir:
+      - acceptance-debian-driver-install-dir:
           requires: [build]
       - toolkit/release-pr:
           name: release-pr
