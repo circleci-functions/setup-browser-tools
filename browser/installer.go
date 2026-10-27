@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/circleci-functions/toolkit/sdk"
 )
@@ -74,4 +76,22 @@ var versionPattern = regexp.MustCompile(`[0-9]+(\.[0-9]+)+[a-z0-9]*`)
 // returning "" when there is none.
 func ParseBrowserVersion(banner string) string {
 	return versionPattern.FindString(banner)
+}
+
+// writeLauncher writes a script to dir/name that execs target with the
+// arguments it was given, and returns its path. Firefox and Chrome for Testing
+// on macOS look for their libraries relative to the path they were started by,
+// so a symlink straight to the binary inside the app bundle fails to start one;
+// a symlink to a launcher that execs the binary by its real path does not.
+//
+// dir is the install's temp dir, which is deleted when the step ends, so the
+// caller copies the launcher somewhere that lasts. It does so as root where
+// needed, which writing there directly could not.
+func writeLauncher(dir, name, target string) (string, error) {
+	path := filepath.Join(dir, name)
+	script := "#!/usr/bin/env bash\nexec '" + target + "' \"$@\"\n"
+	if err := writeFile(path, strings.NewReader(script), 0o755); err != nil {
+		return "", err
+	}
+	return path, nil
 }

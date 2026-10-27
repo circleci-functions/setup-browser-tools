@@ -130,7 +130,8 @@ func TestParseSumsLine(t *testing.T) {
 		{name: "binary mode asterisk is stripped", line: "abc123 *payload.txt", wantDigest: "abc123", wantName: "payload.txt", wantOK: true},
 		{name: "blank line", line: "", wantOK: false},
 		{name: "one field", line: "abc123", wantOK: false},
-		{name: "three fields", line: "a b c", wantOK: false},
+		{name: "a name with a space is kept whole", line: "abc123  mac/en-US/Firefox 149.0.2.dmg", wantDigest: "abc123", wantName: "mac/en-US/Firefox 149.0.2.dmg", wantOK: true},
+		{name: "no name after the separator", line: "abc123  ", wantOK: false},
 	}
 
 	for _, tc := range tests {

@@ -13,6 +13,9 @@ import (
 // than an app bundle on macOS too, treating it as temporary.
 const chromeForTestingTree = "/opt/chrome-for-testing"
 
+// chromeForTestingMacBinary is the browser's binary within the macOS tree.
+const chromeForTestingMacBinary = "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+
 type ChromeForTestingOptions struct {
 	Version      string
 	InstallDir   string
@@ -144,6 +147,11 @@ func (i *Installer) installChromeForTestingBrowser(ctx context.Context, dir, ver
 	if err := i.Runner.Exec(ctx, "cp", "-R", unpacked, chromeForTestingTree); err != nil {
 		return err
 	}
+	if i.Platform.IsMacOS() {
+		if err := i.addChromeForTestingMacLauncher(ctx, dir); err != nil {
+			return err
+		}
+	}
 	// The tree is extracted as the job user and then copied in as root, which
 	// leaves it owned by root with the extractor's own directory mode. Without
 	// this the job user cannot traverse it, and a symlink into it fails to
@@ -175,6 +183,18 @@ func (i *Installer) installChromeForTestingBrowser(ctx context.Context, dir, ver
 		return fmt.Errorf("Chrome for Testing %s did not run after installing: %w", version, err) //nolint:staticcheck // proper noun
 	}
 	return nil
+}
+
+// addChromeForTestingMacLauncher puts a chrome at the top of the tree, which
+// the symlink in the install dir points at. The Linux build has one; the macOS
+// build is an app bundle whose binary cannot be symlinked to directly, as it
+// loads its framework relative to the path it was started by.
+func (i *Installer) addChromeForTestingMacLauncher(ctx context.Context, dir string) error {
+	launcher, err := writeLauncher(dir, "chrome-launcher", filepath.Join(chromeForTestingTree, chromeForTestingMacBinary))
+	if err != nil {
+		return err
+	}
+	return i.Runner.Exec(ctx, "cp", launcher, filepath.Join(chromeForTestingTree, "chrome"))
 }
 
 // satisfyChromeForTestingDeps installs the shared libraries the build lists in
