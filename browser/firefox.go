@@ -67,13 +67,9 @@ func (i *Installer) InstallFirefox(ctx context.Context, opts FirefoxOptions) err
 		return err
 	}
 
-	if installed, found := i.installedFirefoxVersion(ctx); found {
-		if installed == version {
-			i.logf("Firefox %s is already installed", installed)
-			return nil
-		}
-		i.logf("Firefox %s is installed; replacing it with %s", installed, version)
-		_ = i.Runner.Exec(ctx, "rm", "-f", filepath.Join(opts.InstallDir, "firefox"), usrLocalBin+"/firefox")
+	if i.firefoxAlreadyInstalled(ctx, version, opts.InstallDir) {
+		i.exportFirefoxBin(false, opts.InstallDir)
+		return nil
 	}
 
 	if err := i.prepareFirefoxHost(ctx, opts.InstallDir); err != nil {
@@ -102,11 +98,29 @@ func (i *Installer) InstallFirefox(ctx context.Context, opts FirefoxOptions) err
 	}
 	i.logf("installed Firefox %s", installed)
 	RecordVersion(i.Out, "Firefox", installed)
+	i.exportFirefoxBin(true, opts.InstallDir)
 
 	if key != "" {
 		i.Cache.Save(ctx, key, []string{downloads})
 	}
 	return nil
+}
+
+// firefoxAlreadyInstalled reports whether the install can be skipped. A
+// Firefox of another version has its links removed, so the install replaces
+// it.
+func (i *Installer) firefoxAlreadyInstalled(ctx context.Context, version, installDir string) bool {
+	installed, found := i.installedFirefoxVersion(ctx)
+	if !found {
+		return false
+	}
+	if installed == version {
+		i.logf("Firefox %s is already installed", installed)
+		return true
+	}
+	i.logf("Firefox %s is installed; replacing it with %s", installed, version)
+	_ = i.Runner.Exec(ctx, "rm", "-f", filepath.Join(installDir, "firefox"), usrLocalBin+"/firefox")
+	return false
 }
 
 func (i *Installer) firefoxSupported() error {

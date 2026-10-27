@@ -43,6 +43,13 @@ type installerOpts struct {
 func testInstaller(t *testing.T, opts installerOpts) (*Installer, *[]invocation) {
 	t.Helper()
 
+	// The install flows export CHROME_BIN and FIREFOX_BIN, so point them at a
+	// throwaway $BASH_ENV rather than the developer's or the job's own, and
+	// start with neither variable set.
+	t.Setenv("BASH_ENV", filepath.Join(t.TempDir(), "bash_env"))
+	t.Setenv(chromeBinEnv, "")
+	t.Setenv(firefoxBinEnv, "")
+
 	if opts.arch == "" {
 		opts.arch = ArchAMD64
 	}

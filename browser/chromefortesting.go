@@ -49,6 +49,7 @@ func (i *Installer) InstallChromeForTesting(ctx context.Context, opts ChromeForT
 		return err
 	}
 	RecordVersion(i.Out, "Chrome for Testing", version)
+	i.exportBrowserBin("Chrome for Testing", chromeBinEnv, absPath(filepath.Join(opts.InstallDir, "chrome")))
 
 	if !opts.ChromeDriver {
 		return nil

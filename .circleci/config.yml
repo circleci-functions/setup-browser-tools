@@ -108,6 +108,20 @@ jobs:
       - acceptance:
           run: TestAcceptanceXvfb
 
+  acceptance-debian-browser-bin:
+    executor: debian
+    steps:
+      - acceptance:
+          run: TestAcceptanceBrowserBin
+
+  # The suite's later steps run in bash, which the image lacks.
+  acceptance-alpine-browser-bin:
+    executor: alpine
+    steps:
+      - run: apk add --no-cache bash git curl
+      - acceptance:
+          run: TestAcceptanceBrowserBin
+
   # Mozilla's linux-aarch64 build.
   acceptance-debian-arm64-firefox:
     executor: debian
@@ -418,6 +432,10 @@ workflows:
       - acceptance-debian-xvfb:
           requires: [build]
       - acceptance-alpine-xvfb:
+          requires: [build]
+      - acceptance-debian-browser-bin:
+          requires: [build]
+      - acceptance-alpine-browser-bin:
           requires: [build]
       - acceptance-debian-arm64-firefox:
           requires: [build]
