@@ -1,4 +1,9 @@
 version: "2"
+run:
+  # Lint the real-install acceptance tests too, which are otherwise built only
+  # by `task acceptance`.
+  build-tags:
+    - acceptance
 linters:
   enable:
     - depguard

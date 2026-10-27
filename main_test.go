@@ -123,7 +123,7 @@ func TestDescribeAdvertisesNegatableDefaults(t *testing.T) {
 		assert.Assert(t, f.Negatable, "%s should be negatable", name)
 	}
 
-	for _, name := range []string{"chrome-for-testing", "chrome-for-testing-driver", "edge", "edge-driver"} {
+	for _, name := range []string{"chrome-for-testing", "chrome-for-testing-driver", "edge", "edge-driver", "xvfb"} {
 		f, ok := byName[name]
 		assert.Assert(t, ok, "%s missing from the descriptor", name)
 		assert.Equal(t, f.Default, "false", "%s should advertise default false", name)
@@ -140,12 +140,12 @@ func TestDescribeCoversEverySubcommand(t *testing.T) {
 	for _, name := range []string{
 		"install-browser-tools", "install-chrome", "install-chromedriver",
 		"install-firefox", "install-geckodriver", "install-chrome-for-testing",
-		"install-edge", "install-edge-driver",
+		"install-edge", "install-edge-driver", "start-xvfb",
 	} {
 		_, ok := d.Commands[name]
 		assert.Assert(t, ok, "%s missing from the descriptor", name)
 	}
-	assert.Equal(t, len(d.Commands), 8)
+	assert.Equal(t, len(d.Commands), 9)
 }
 
 func TestNoSubcommandCarriesATimeoutFlag(t *testing.T) {

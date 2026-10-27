@@ -1,9 +1,6 @@
 package acceptance_test
 
 import (
-	"context"
-	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"testing"
@@ -11,40 +8,8 @@ import (
 	"go.yaml.in/yaml/v4"
 	"gotest.tools/v3/assert"
 
-	"github.com/circleci-functions/toolkit/testing/compiler"
 	"github.com/circleci-functions/toolkit/testing/runner"
 )
-
-var binaryPath string
-
-func TestMain(m *testing.M) {
-	status, err := runTests(m)
-	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(1)
-	}
-	os.Exit(status)
-}
-
-func runTests(m *testing.M) (int, error) {
-	ctx := context.Background()
-
-	p := compiler.NewParallel(1)
-	defer p.Cleanup()
-
-	p.Add(compiler.Work{
-		Result: &binaryPath,
-		Name:   "setup-browser-tools",
-		Target: "..",
-		Source: ".",
-	})
-
-	if err := p.Run(ctx); err != nil {
-		return 0, err
-	}
-
-	return m.Run(), nil
-}
 
 func run(t *testing.T, args ...string) (string, error) {
 	t.Helper()
@@ -63,6 +28,7 @@ var subcommands = []string{
 	"install-chrome-for-testing",
 	"install-edge",
 	"install-edge-driver",
+	"start-xvfb",
 }
 
 func TestHelpListsEverySubcommand(t *testing.T) {
@@ -147,6 +113,10 @@ func TestSubcommandFlagsExactly(t *testing.T) {
 			want:    []string{"install-dir"},
 		},
 		{
+			command: "start-xvfb",
+			want:    []string{"display", "screen"},
+		},
+		{
 			command: "install-browser-tools",
 			want: []string{
 				"chrome", "chrome-for-testing", "chrome-for-testing-driver",
@@ -155,7 +125,7 @@ func TestSubcommandFlagsExactly(t *testing.T) {
 				"edge", "edge-driver", "edge-driver-install-dir", "edge-version",
 				"firefox", "firefox-install-dir", "firefox-version",
 				"geckodriver", "geckodriver-install-dir", "geckodriver-version",
-				"replace-existing-chrome",
+				"replace-existing-chrome", "xvfb",
 			},
 		},
 	}
@@ -172,9 +142,9 @@ func TestSubcommandFlagsExactly(t *testing.T) {
 	}
 }
 
-func TestAggregateHasNineteenFlags(t *testing.T) {
+func TestAggregateHasTwentyFlags(t *testing.T) {
 	flags := descriptorFlags(t)
-	assert.Equal(t, len(flags["install-browser-tools"]), 19)
+	assert.Equal(t, len(flags["install-browser-tools"]), 20)
 }
 
 func TestUnknownFlagFails(t *testing.T) {
