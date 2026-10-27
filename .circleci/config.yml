@@ -108,6 +108,27 @@ jobs:
       - acceptance:
           run: TestAcceptanceXvfb
 
+  # Mozilla's linux-aarch64 build.
+  acceptance-debian-arm64-firefox:
+    executor: debian
+    resource_class: arm.medium
+    steps:
+      - acceptance:
+          platform: linux/arm64
+          run: TestAcceptanceLinuxARM64Firefox$
+
+  # Chrome for Testing is the Chrome and chromedriver an arm64 Debian job can
+  # have, which is what install-chromedriver's refusal there points to. The
+  # default set runs here too, where no Firefox is installed yet, so it installs
+  # Firefox afresh while skipping Google Chrome and ChromeDriver.
+  acceptance-debian-arm64-chrome-for-testing:
+    executor: debian
+    resource_class: arm.medium
+    steps:
+      - acceptance:
+          platform: linux/arm64
+          run: TestAcceptanceLinuxARM64(ChromeForTesting|ChromeDriverIsRefused|BrowserTools)$
+
   # Drivers installed into a --install-dir that is missing and off PATH, which
   # a later step has to find there by name.
   acceptance-debian-driver-install-dir:
@@ -397,6 +418,10 @@ workflows:
       - acceptance-debian-xvfb:
           requires: [build]
       - acceptance-alpine-xvfb:
+          requires: [build]
+      - acceptance-debian-arm64-firefox:
+          requires: [build]
+      - acceptance-debian-arm64-chrome-for-testing:
           requires: [build]
       - acceptance-debian-driver-install-dir:
           requires: [build]

@@ -57,8 +57,10 @@ func (i *Installer) InstallChromeForTesting(ctx context.Context, opts ChromeForT
 }
 
 // chromeForTestingPlatform returns the download target, or an unsupported error.
-// Only macOS and Debian amd64 are supported; the orb's if/elif had no else, so
-// on Alpine and RHEL it exited 0 having installed nothing.
+// Only macOS and Debian are supported, since the Linux build's libraries are
+// installed from its deb.deps; the orb's if/elif had no else, so on Alpine and
+// RHEL it exited 0 having installed nothing. Google publishes linux-arm64 builds
+// from 153.0.8001.0, so an older version there fails as unpublished.
 func (i *Installer) chromeForTestingPlatform() (string, error) {
 	switch {
 	case i.Platform.IsMacOS() && i.Platform.Arch == ArchAMD64:
@@ -67,8 +69,10 @@ func (i *Installer) chromeForTestingPlatform() (string, error) {
 		return "mac-arm64", nil
 	case i.Platform.Distro == DistroDebian && i.Platform.Arch == ArchAMD64:
 		return "linux64", nil
+	case i.Platform.Distro == DistroDebian && i.Platform.Arch == ArchARM64:
+		return "linux-arm64", nil
 	default:
-		return "", Unsupported("Chrome for Testing", i.Platform, "builds are published for macOS and Debian/Ubuntu amd64 only")
+		return "", Unsupported("Chrome for Testing", i.Platform, "builds are published for macOS and Debian/Ubuntu only")
 	}
 }
 
