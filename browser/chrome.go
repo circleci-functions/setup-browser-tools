@@ -56,7 +56,7 @@ func (i *Installer) InstallChrome(ctx context.Context, opts ChromeOptions) error
 
 	if opts.UseCache && i.chromePackageCached() {
 		key := ChromeCacheKey(i.Host, opts.CacheKey, opts.Channel, target)
-		if dir, err := chromeCacheDir(key); err == nil {
+		if dir, err := cacheDir(key); err == nil {
 			i.Cache.Save(ctx, key, []string{dir})
 		}
 	}
@@ -206,21 +206,11 @@ func (i *Installer) chromePackageCached() bool {
 	return i.Platform.Distro == DistroDebian || i.Platform.Distro == DistroRHEL
 }
 
-// chromeCacheDir is where the Chrome package for key is kept, in the user's
-// cache directory, since the job cache restores as the job's user.
-func chromeCacheDir(key string) (string, error) {
-	base, err := os.UserCacheDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve cache directory: %w", err)
-	}
-	return filepath.Join(base, cacheKeyPrefix, key), nil
-}
-
 // installChromeWithCache installs the Chrome package restored from the job
 // cache, downloading it first on a miss.
 func (i *Installer) installChromeWithCache(ctx context.Context, target, requested string, opts ChromeOptions) error {
 	key := ChromeCacheKey(i.Host, opts.CacheKey, opts.Channel, target)
-	dir, err := chromeCacheDir(key)
+	dir, err := cacheDir(key)
 	if err != nil {
 		return err
 	}

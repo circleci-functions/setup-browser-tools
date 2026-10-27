@@ -284,6 +284,44 @@ jobs:
             chrome --version
             chromedriver --version
 
+  # A Firefox cache hit must install with Mozilla unreachable, which is what
+  # --use-cache is for. The second install runs on the same machine with the
+  # install and the local cache directory removed, so only the job cache can
+  # supply it.
+  #
+  # Assumes the job cache restores, later in a job, an entry saved earlier in
+  # the same job. The toolkit SDK documents its live-cache test mode on that
+  # basis but this repo has not seen it demonstrated. The key is fixed, so only
+  # the first pipeline ever to run this row depends on it: every later one
+  # restores the entry that pipeline saved, in both installs.
+  install-debian-firefox-cache:
+    executor: debian
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: install-firefox with --use-cache
+          command: ./dist/setup-browser-tools/linux/amd64/setup-browser-tools install-firefox --use-cache --version 149.0.2
+      - run:
+          name: Remove Firefox and the local cache directory
+          command: |
+            sudo rm -rf /usr/local/bin/firefox /usr/local/bin/firefox-*
+            rm -rf ~/.cache/setup-browser-tools
+            if command -v firefox; then
+              echo "FAIL: firefox is still on PATH" >&2
+              exit 1
+            fi
+      - run:
+          name: install-firefox again with Mozilla blocked
+          command: |
+            echo '127.0.0.1 archive.mozilla.org' | sudo tee -a /etc/hosts
+            ./dist/setup-browser-tools/linux/amd64/setup-browser-tools install-firefox --use-cache --version 149.0.2 2>&1 | tee /tmp/firefox-cache.log
+            grep -q "using Firefox 149.0.2 from the job cache" /tmp/firefox-cache.log
+      - run:
+          name: Assert Firefox reports a version
+          command: firefox --version | grep -F 149.0.2
+
 workflows:
   test-publish:
     jobs:
@@ -320,6 +358,8 @@ workflows:
       - install-macos-edge:
           requires: [build]
       - install-debian-opt-in-set:
+          requires: [build]
+      - install-debian-firefox-cache:
           requires: [build]
       - toolkit/release-pr:
           name: release-pr

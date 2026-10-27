@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/circleci-functions/toolkit/sdk"
 )
@@ -18,9 +19,28 @@ func ChromeCacheKey(h Host, cacheKey, channel, version string) string {
 		cacheKeyPrefix, cacheKey, channel, version, h.goos(), h.goarch())
 }
 
+// FirefoxCacheKey carries a "release" token that the --cache-key value follows.
+// Up to v0.4.0 an entry under setup-browser-tools-firefox-<cache-key>-... held
+// the archive at a temp path, which no later run looks in. Keys are write-once
+// and a restore matches them as a prefix, so reusing that shape would leave an
+// upgraded project restoring the old entry and never saving a usable one. The
+// token keeps the new key from matching any old one.
 func FirefoxCacheKey(h Host, cacheKey, version string) string {
-	return fmt.Sprintf("%s-firefox-%s-%s-%s-%s",
+	return fmt.Sprintf("%s-firefox-release-%s-%s-%s-%s",
 		cacheKeyPrefix, cacheKey, version, h.goos(), h.goarch())
+}
+
+// cacheDir is where the files cached under key are kept: a fixed path in the
+// user's cache directory. The job cache restores an entry to the absolute path
+// it was saved from, and does so as the job's user, so the path has to be the
+// same in every pipeline and writable without root. A temp directory is
+// neither, and an entry saved from one is never found again.
+func cacheDir(key string) (string, error) {
+	base, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve cache directory: %w", err)
+	}
+	return filepath.Join(base, cacheKeyPrefix, key), nil
 }
 
 // Cache wraps the job cache. Every failure is logged and swallowed, including

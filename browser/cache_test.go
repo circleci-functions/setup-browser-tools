@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/circleci-functions/toolkit/sdk/sdktest"
@@ -42,12 +43,12 @@ func TestCacheKeys(t *testing.T) {
 		{
 			name: "firefox has no channel",
 			got:  FirefoxCacheKey(linuxHost(), "v1", "149.0.2"),
-			want: "setup-browser-tools-firefox-v1-149.0.2-linux-amd64",
+			want: "setup-browser-tools-firefox-release-v1-149.0.2-linux-amd64",
 		},
 		{
 			name: "firefox varies by arch",
 			got:  FirefoxCacheKey(Host{GOOS: "darwin", GOARCH: ArchARM64}, "v1", "149.0.2"),
-			want: "setup-browser-tools-firefox-v1-149.0.2-darwin-arm64",
+			want: "setup-browser-tools-firefox-release-v1-149.0.2-darwin-arm64",
 		},
 	}
 
@@ -63,6 +64,17 @@ func TestChromeCacheKeySeparatesChannels(t *testing.T) {
 	stable := ChromeCacheKey(linuxHost(), "v1", "stable", "147.0.7727.55")
 	beta := ChromeCacheKey(linuxHost(), "v1", "beta", "147.0.7727.55")
 	assert.Assert(t, stable != beta)
+}
+
+func TestFirefoxCacheKeyMatchesNoOldEntry(t *testing.T) {
+	// Entries up to v0.4.0 hold the archive at a temp path no later run looks
+	// in. A restore matches its key as a prefix, so the new key must not be one
+	// of any old key, whatever --cache-key was.
+	for _, cacheKey := range []string{"v1", "v2", ""} {
+		key := FirefoxCacheKey(linuxHost(), cacheKey, "149.0.2")
+		old := "setup-browser-tools-firefox-" + cacheKey + "-149.0.2-linux-amd64"
+		assert.Assert(t, !strings.HasPrefix(old, key), "%q restores the old entry %q", key, old)
+	}
 }
 
 func TestCacheRoundTrip(t *testing.T) {
