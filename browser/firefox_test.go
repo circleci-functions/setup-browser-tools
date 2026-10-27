@@ -416,8 +416,8 @@ func (m *fakeMozilla) takeRequests() []string {
 	return got
 }
 
-// firefoxInstaller returns an installer for one pipeline on a fresh Debian
-// host, downloading from m and caching through client.
+// firefoxInstaller returns an installer for a fresh Debian host, downloading
+// from m and caching through client.
 func firefoxInstaller(t *testing.T, m *fakeMozilla, client *sdk.Client) (*Installer, *[]invocation) {
 	t.Helper()
 
@@ -429,7 +429,7 @@ func firefoxInstaller(t *testing.T, m *fakeMozilla, client *sdk.Client) (*Instal
 	i.Endpoints.MozillaProduct = m.srv.URL
 	i.Fetcher = Fetcher{HTTPClient: m.srv.Client()}
 	i.Cache = Cache{Client: client, Out: io.Discard}
-	// firefox is on PATH only once the install has linked it, so each pipeline
+	// firefox is on PATH only once the install has linked it, so the install
 	// starts without one, as a fresh job does.
 	i.Host.LookPath = func(name string) (string, error) {
 		if name == "gpg" {
@@ -474,38 +474,8 @@ func gpgVerifications(calls []invocation) [][]string {
 	return got
 }
 
-func TestInstallFirefoxFromCacheNeedsNoMozilla(t *testing.T) {
-	opts, key, dir := cachedFirefoxSetup(t)
-	m := newFakeMozilla(t)
-	// The fake job cache restores an entry to the absolute path it was saved
-	// from, as CircleCI's does, which is what a download into a temp dir never
-	// hit again.
-	srv := sdktest.NewServer(t)
-	ctx := context.Background()
-
-	i, _ := firefoxInstaller(t, m, srv.Client())
-	assert.NilError(t, i.InstallFirefox(ctx, opts))
-	base := "/" + cachedFirefoxVersion
-	assert.DeepEqual(t, m.takeRequests(), []string{
-		base + "/linux-x86_64/en-US/firefox-" + cachedFirefoxVersion + ".tar.xz",
-		base + "/KEY",
-		base + "/SHA256SUMS",
-		base + "/SHA256SUMS.asc",
-	})
-	assert.DeepEqual(t, srv.SavedKeys(), []string{key})
-
-	// The next pipeline runs on a fresh machine, with nothing left locally.
-	assert.NilError(t, os.RemoveAll(dir))
-
-	i, calls := firefoxInstaller(t, m, srv.Client())
-	assert.NilError(t, i.InstallFirefox(ctx, opts))
-	assert.DeepEqual(t, m.takeRequests(), []string(nil))
-	// A hit is still verified, against the key, manifest and signature cached
-	// with the archive.
-	assert.DeepEqual(t, gpgVerifications(*calls), [][]string{
-		{"--verify", filepath.Join(dir, "SHA256SUMS.asc"), filepath.Join(dir, "SHA256SUMS")},
-	})
-}
+// The cache hit itself, with Mozilla unreachable, is TestAcceptanceFirefoxCache
+// in acceptance/; these cover what a real install cannot cheaply reach.
 
 func TestInstallFirefoxDownloadsAgainOverABadCacheEntry(t *testing.T) {
 	archiveName := "firefox-" + cachedFirefoxVersion + ".tar.xz"
