@@ -28,6 +28,7 @@ var subcommands = []string{
 	"install-chrome-for-testing",
 	"install-edge",
 	"install-edge-driver",
+	"start-xvfb",
 }
 
 func TestHelpListsEverySubcommand(t *testing.T) {
@@ -112,6 +113,10 @@ func TestSubcommandFlagsExactly(t *testing.T) {
 			want:    []string{"install-dir"},
 		},
 		{
+			command: "start-xvfb",
+			want:    []string{"display", "screen"},
+		},
+		{
 			command: "install-browser-tools",
 			want: []string{
 				"chrome", "chrome-for-testing", "chrome-for-testing-driver",
@@ -120,7 +125,7 @@ func TestSubcommandFlagsExactly(t *testing.T) {
 				"edge", "edge-driver", "edge-driver-install-dir", "edge-version",
 				"firefox", "firefox-install-dir", "firefox-version",
 				"geckodriver", "geckodriver-install-dir", "geckodriver-version",
-				"replace-existing-chrome",
+				"replace-existing-chrome", "xvfb",
 			},
 		},
 	}
@@ -137,9 +142,9 @@ func TestSubcommandFlagsExactly(t *testing.T) {
 	}
 }
 
-func TestAggregateHasNineteenFlags(t *testing.T) {
+func TestAggregateHasTwentyFlags(t *testing.T) {
 	flags := descriptorFlags(t)
-	assert.Equal(t, len(flags["install-browser-tools"]), 19)
+	assert.Equal(t, len(flags["install-browser-tools"]), 20)
 }
 
 func TestUnknownFlagFails(t *testing.T) {

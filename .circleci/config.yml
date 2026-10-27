@@ -92,6 +92,23 @@ jobs:
       - acceptance:
           run: TestAcceptanceGeckodriver
 
+  # Each test checks the display from a fresh process after the function's has
+  # exited, which is what a later step is, so Xvfb outliving its step is part of
+  # what passes. The headed-browser test runs Chrome here and Chromium on Alpine.
+  acceptance-debian-xvfb:
+    executor: debian
+    steps:
+      - acceptance:
+          run: TestAcceptanceXvfb
+
+  acceptance-alpine-xvfb:
+    executor: alpine
+    steps:
+      - run: apk add --no-cache bash git curl
+      - acceptance:
+          run: TestAcceptanceXvfb
+
+
   # Real installs against real images. Nothing else in this repo executes an
   # install: the unit tests assert against the same reading of the orb that let
   # its own missing-else branches survive, so this is the only thing that can
@@ -369,6 +386,10 @@ workflows:
       - acceptance-debian-firefox-cache:
           requires: [build]
       - acceptance-debian-geckodriver:
+          requires: [build]
+      - acceptance-debian-xvfb:
+          requires: [build]
+      - acceptance-alpine-xvfb:
           requires: [build]
       - toolkit/release-pr:
           name: release-pr
