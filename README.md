@@ -282,3 +282,19 @@ Coverage varies by browser, because the vendors publish different builds. The di
 | `start-xvfb` | not needed | yes | yes | yes | yes | no |
 
 Asking for a browser on a platform it is not published for is an error. The exception is `install-browser-tools`: a component that is on only by default is warned about and skipped, so a bare run on Alpine installs Chromium, ChromeDriver and geckodriver, and reports why it skipped Firefox. Naming that component explicitly makes it an error instead.
+
+## Development
+
+`task lint` and `task test` are hermetic. `task test` includes the command-line contract tests in `acceptance/`, but not the real-install tests there, which are tagged `acceptance`: they install browsers with the package manager and write under `/usr/local`, so they skip unless they run in a CircleCI job or `SETUP_BROWSER_TOOLS_ACCEPTANCE_DISPOSABLE=1` is set.
+
+To run them locally, use a throwaway container:
+
+```sh
+task acceptance-docker                                   # every test, on cimg/base:current
+task acceptance-docker RUN=TestAcceptanceGeckodriver     # a -test.run pattern
+task acceptance-docker IMAGE=cimg/base:stable PLATFORM=linux/arm64
+```
+
+It cross-compiles the binary and the suite, mounts them into the container read-only, and runs the suite there against an in-memory stand-in for the job cache. `PLATFORM` defaults to `linux/amd64`, which every browser supports; on an arm64 host that runs emulated, and slowly. The image needs bash and, unless it runs as root, sudo.
+
+In CI, the `acceptance` command in `.circleci/config.yml` runs the same cross-compiled suite against the job's real cache. A new install behaviour gets a test there and a row that runs it.

@@ -22,6 +22,31 @@ executors:
     macos:
       xcode: 16.2.0
 
+commands:
+  acceptance:
+    description: >-
+      Run tests from the cross-compiled acceptance suite against the
+      cross-compiled binary, both from the workspace, so the executor needs no
+      Go and no checkout. The job's own cache stands in for the in-memory one.
+    parameters:
+      platform:
+        type: string
+        default: linux/amd64
+        description: The os/arch whose artifacts to run, e.g. linux/arm64.
+      run:
+        type: string
+        description: The tests to run, as a -test.run pattern.
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          name: Acceptance << parameters.run >>
+          command: ./dist/acceptance/<< parameters.platform >>/acceptance -test.v -test.timeout 30m -test.run '<< parameters.run >>'
+          environment:
+            SETUP_BROWSER_TOOLS_BINARY: ./dist/setup-browser-tools/<< parameters.platform >>/setup-browser-tools
+            # The suite fails rather than falling back if it cannot reach it.
+            TOOLKIT_CACHE_MODE: live
+
 jobs:
   test:
     executor: go
@@ -51,10 +76,21 @@ jobs:
             - setup-browser-tools-go-{{ checksum "go.sum" }}-
             - setup-browser-tools-go-
       - run: task dry-run
+      # The acceptance suite as a binary, so an install job needs no Go.
+      - run: task build-acceptance
       - persist_to_workspace:
           root: .
           paths:
             - dist
+
+  # Runs the acceptance suite. New install behaviour is covered by a test in
+  # acceptance/ and a row that runs it, rather than by a bash row like those
+  # below.
+  acceptance-debian-geckodriver:
+    executor: debian
+    steps:
+      - acceptance:
+          run: TestAcceptanceGeckodriver
 
   # Real installs against real images. Nothing else in this repo executes an
   # install: the unit tests assert against the same reading of the orb that let
@@ -355,6 +391,8 @@ workflows:
       - install-debian-opt-in-set:
           requires: [build]
       - install-debian-xvfb:
+          requires: [build]
+      - acceptance-debian-geckodriver:
           requires: [build]
       - toolkit/release-pr:
           name: release-pr
