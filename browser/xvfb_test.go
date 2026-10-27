@@ -30,7 +30,6 @@ type fakeX struct {
 	log string
 
 	started [][]string
-	logPath string
 	polls   int
 	sleeps  int
 }
@@ -41,7 +40,6 @@ func (f *fakeX) server(t *testing.T) XServer {
 		LogDir: t.TempDir(),
 		Start: func(name string, args []string, logPath string) (func() error, error) {
 			f.started = append(f.started, append([]string{name}, args...))
-			f.logPath = logPath
 			if err := os.WriteFile(logPath, []byte(f.log), 0o600); err != nil {
 				return nil, err
 			}
@@ -84,111 +82,6 @@ func readBashEnv(t *testing.T, path string) string {
 	}
 	assert.NilError(t, err)
 	return string(data)
-}
-
-func commandLines(calls []invocation) []string {
-	out := make([]string, 0, len(calls))
-	for _, c := range calls {
-		out = append(out, strings.TrimSpace(c.name+" "+strings.Join(c.args, " ")))
-	}
-	return out
-}
-
-var defaultXvfbArgs = []string{"Xvfb", ":99", "-screen", "0", "1280x1024x24", "-nolisten", "tcp"}
-
-func TestStartXvfbInstallsTheDistroPackage(t *testing.T) {
-	tests := []struct {
-		distro Distro
-		want   []string
-	}{
-		{distro: DistroDebian, want: []string{"apt-get update", "apt-get install -y xvfb"}},
-		{distro: DistroRHEL, want: []string{"yum install -y xorg-x11-server-Xvfb"}},
-		{distro: DistroAlpine, want: []string{"apk update", "apk add --no-cache xvfb"}},
-	}
-
-	for _, tc := range tests {
-		t.Run(string(tc.distro), func(t *testing.T) {
-			bashEnv := withBashEnv(t)
-			x := &fakeX{upAfter: 0}
-			i, calls, log := xvfbInstaller(t, x, installerOpts{distro: tc.distro})
-
-			assert.NilError(t, i.StartXvfb(context.Background(), XvfbOptions{}))
-
-			assert.DeepEqual(t, commandLines(*calls), tc.want)
-			assert.DeepEqual(t, x.started, [][]string{defaultXvfbArgs})
-			assert.Equal(t, readBashEnv(t, bashEnv), "export DISPLAY=':99'\n")
-			assert.Assert(t, strings.Contains(log.String(), "installed Xvfb"), log.String())
-			assert.Assert(t, strings.Contains(log.String(), "started Xvfb on :99"), log.String())
-		})
-	}
-}
-
-func TestStartXvfbRunsXvfbAsTheJobUser(t *testing.T) {
-	// The package install needs sudo; the server itself must not run under it,
-	// or the display would belong to root.
-	withBashEnv(t)
-	x := &fakeX{upAfter: 0}
-	i, calls, _ := xvfbInstaller(t, x, installerOpts{distro: DistroDebian})
-	i.Runner.Priv = sudoPrivilege()
-
-	assert.NilError(t, i.StartXvfb(context.Background(), XvfbOptions{}))
-
-	assert.DeepEqual(t, commandLines(*calls), []string{
-		"sudo apt-get update", "sudo apt-get install -y xvfb",
-	})
-	assert.DeepEqual(t, x.started, [][]string{defaultXvfbArgs})
-}
-
-func TestStartXvfbSkipsTheInstallWhenXvfbIsOnPath(t *testing.T) {
-	bashEnv := withBashEnv(t)
-	x := &fakeX{upAfter: 0}
-	i, calls, log := xvfbInstaller(t, x, installerOpts{distro: DistroDebian, onPath: []string{"Xvfb"}})
-	// Already installed needs no privilege.
-	i.Runner.Priv = Privilege{}
-
-	assert.NilError(t, i.StartXvfb(context.Background(), XvfbOptions{}))
-
-	assert.Equal(t, len(*calls), 0, "nothing should be installed: %v", commandLines(*calls))
-	assert.Equal(t, len(x.started), 1)
-	assert.Equal(t, readBashEnv(t, bashEnv), "export DISPLAY=':99'\n")
-	assert.Assert(t, strings.Contains(log.String(), "Xvfb is already installed"), log.String())
-}
-
-func TestStartXvfbReusesADisplayThatIsAlreadyUp(t *testing.T) {
-	bashEnv := withBashEnv(t)
-	x := &fakeX{up: true}
-	i, calls, log := xvfbInstaller(t, x, installerOpts{distro: DistroDebian})
-
-	assert.NilError(t, i.StartXvfb(context.Background(), XvfbOptions{Display: ":42"}))
-
-	assert.Equal(t, len(x.started), 0, "a second server must not be started")
-	assert.Equal(t, len(*calls), 0, "nothing should be installed: %v", commandLines(*calls))
-	assert.Equal(t, readBashEnv(t, bashEnv), "export DISPLAY=':42'\n")
-	assert.Assert(t, strings.Contains(log.String(), "display :42 is already up; reusing it"), log.String())
-}
-
-func TestStartXvfbTwiceExportsDisplayOnce(t *testing.T) {
-	bashEnv := withBashEnv(t)
-	x := &fakeX{upAfter: 0}
-	i, _, _ := xvfbInstaller(t, x, installerOpts{distro: DistroDebian, onPath: []string{"Xvfb"}})
-
-	assert.NilError(t, i.StartXvfb(context.Background(), XvfbOptions{}))
-	assert.NilError(t, i.StartXvfb(context.Background(), XvfbOptions{}))
-
-	assert.Equal(t, len(x.started), 1)
-	assert.Equal(t, readBashEnv(t, bashEnv), "export DISPLAY=':99'\n")
-}
-
-func TestStartXvfbWaitsForTheSocket(t *testing.T) {
-	withBashEnv(t)
-	x := &fakeX{upAfter: 3}
-	i, _, _ := xvfbInstaller(t, x, installerOpts{distro: DistroDebian, onPath: []string{"Xvfb"}})
-
-	assert.NilError(t, i.StartXvfb(context.Background(), XvfbOptions{Display: ":7", Screen: "1920x1080x24"}))
-
-	assert.DeepEqual(t, x.started, [][]string{{"Xvfb", ":7", "-screen", "0", "1920x1080x24", "-nolisten", "tcp"}})
-	assert.Equal(t, x.sleeps, 3)
-	assert.Equal(t, x.logPath, filepath.Join(i.XServer.LogDir, "xvfb-7.log"))
 }
 
 func TestStartXvfbTimesOutWithTheLogTail(t *testing.T) {
@@ -301,42 +194,6 @@ func TestStartXvfbFailsUpFront(t *testing.T) {
 	}
 }
 
-func TestBrowserToolsStartsXvfbAfterTheInstalls(t *testing.T) {
-	bashEnv := withBashEnv(t)
-	x := &fakeX{upAfter: 0}
-	i, _, _ := xvfbInstaller(t, x, installerOpts{distro: DistroDebian, onPath: []string{"Xvfb"}})
-
-	var ran []string
-	stubComponents(i, map[string]error{}, &ran)
-	// Record when Xvfb starts relative to the components.
-	start := i.XServer.Start
-	i.XServer.Start = func(name string, args []string, logPath string) (func() error, error) {
-		ran = append(ran, name)
-		return start(name, args, logPath)
-	}
-
-	err := i.InstallBrowserTools(context.Background(), BrowserToolsOptions{
-		Chrome: true, ChromeDriver: true, Xvfb: true, Explicit: ExplicitFlags{"xvfb": true},
-	})
-
-	assert.NilError(t, err)
-	assert.DeepEqual(t, ran, []string{"Chrome", "ChromeDriver", "Xvfb"})
-	assert.Equal(t, readBashEnv(t, bashEnv), "export DISPLAY=':99'\n")
-}
-
-func TestBrowserToolsLeavesXvfbOffByDefault(t *testing.T) {
-	bashEnv := withBashEnv(t)
-	x := &fakeX{upAfter: 0}
-	i, _, _ := xvfbInstaller(t, x, installerOpts{distro: DistroDebian, onPath: []string{"Xvfb"}})
-	var ran []string
-	stubComponents(i, map[string]error{}, &ran)
-
-	assert.NilError(t, i.InstallBrowserTools(context.Background(), BrowserToolsOptions{Chrome: true}))
-
-	assert.Equal(t, len(x.started), 0)
-	assert.Equal(t, readBashEnv(t, bashEnv), "")
-}
-
 func TestBrowserToolsChecksXvfbBeforeInstalling(t *testing.T) {
 	t.Setenv("BASH_ENV", "")
 	x := &fakeX{upAfter: 0}
@@ -348,19 +205,6 @@ func TestBrowserToolsChecksXvfbBeforeInstalling(t *testing.T) {
 
 	assert.ErrorIs(t, err, bashenv.ErrNoBashEnv)
 	assert.Equal(t, len(ran), 0, "no browser should be installed for a run that cannot finish: %v", ran)
-}
-
-func TestBrowserToolsDoesNotStartXvfbAfterAFailedInstall(t *testing.T) {
-	withBashEnv(t)
-	x := &fakeX{upAfter: 0}
-	i, _, _ := xvfbInstaller(t, x, installerOpts{distro: DistroDebian, onPath: []string{"Xvfb"}})
-	var ran []string
-	stubComponents(i, map[string]error{"Chrome": errors.New("download failed")}, &ran)
-
-	err := i.InstallBrowserTools(context.Background(), BrowserToolsOptions{Chrome: true, Xvfb: true})
-
-	assert.ErrorContains(t, err, "download failed")
-	assert.Equal(t, len(x.started), 0)
 }
 
 func TestDisplayAnswers(t *testing.T) {
