@@ -19,6 +19,7 @@ type Installer struct {
 	Cache     Cache
 	Endpoints Endpoints
 	Out       io.Writer
+	XServer   XServer
 
 	// componentsOverride replaces the aggregate's component list. Tests set it to
 	// exercise the unsupported-platform policy without installing anything.

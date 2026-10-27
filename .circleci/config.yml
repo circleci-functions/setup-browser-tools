@@ -284,6 +284,39 @@ jobs:
             chrome --version
             chromedriver --version
 
+  # The display has to outlive the step that started it, so the assertion runs in
+  # a later step: a Chrome without --headless exits at once when there is no X
+  # server or DISPLAY, and stays up when there is.
+  install-debian-xvfb:
+    executor: debian
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: install-browser-tools with --xvfb
+          command: |
+            ./dist/setup-browser-tools/linux/amd64/setup-browser-tools install-browser-tools \
+              --xvfb --no-firefox --no-geckodriver --no-chromedriver
+      - run:
+          name: Assert a headed Chrome runs on the display from the earlier step
+          command: |
+            if [ -z "${DISPLAY:-}" ]; then
+              echo "FAIL: DISPLAY was not exported to this step" >&2
+              exit 1
+            fi
+            echo "DISPLAY=$DISPLAY"
+            google-chrome --no-first-run --no-sandbox --user-data-dir="$(mktemp -d)" about:blank \
+              >/tmp/chrome.log 2>&1 &
+            pid=$!
+            sleep 10
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo "FAIL: headed Chrome exited; it could not use the display" >&2
+              cat /tmp/chrome.log >&2
+              exit 1
+            fi
+            kill "$pid"
+
 workflows:
   test-publish:
     jobs:
@@ -320,6 +353,8 @@ workflows:
       - install-macos-edge:
           requires: [build]
       - install-debian-opt-in-set:
+          requires: [build]
+      - install-debian-xvfb:
           requires: [build]
       - toolkit/release-pr:
           name: release-pr

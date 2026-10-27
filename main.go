@@ -26,6 +26,8 @@ type cli struct {
 	InstallChromeForTesting installChromeForTestingCmd `cmd:"" help:"Install Chrome for Testing, and optionally its matching ChromeDriver."`
 	InstallEdge             installEdgeCmd             `cmd:"" help:"Install Microsoft Edge."`
 	InstallEdgeDriver       installEdgeDriverCmd       `cmd:"" help:"Install Edge WebDriver, matching the installed Edge."`
+
+	StartXvfb startXvfbCmd `cmd:"" help:"Start a virtual X display (Xvfb) for headed browsers on Linux, and export DISPLAY to later steps."`
 }
 
 type installBrowserToolsCmd struct {
@@ -54,6 +56,8 @@ type installBrowserToolsCmd struct {
 
 	EdgeVersion          string `help:"Version of Edge to install." default:"latest"`
 	EdgeDriverInstallDir string `help:"Directory to install Edge WebDriver into." default:"/usr/local/bin"`
+
+	Xvfb bool `help:"After installing, start a virtual X display (Xvfb) on :99 and export DISPLAY to later steps, as start-xvfb does." default:"false"`
 }
 
 func (c *installBrowserToolsCmd) Run(ctx context.Context, client *sdk.Client, explicit browser.ExplicitFlags) error {
@@ -82,6 +86,8 @@ func (c *installBrowserToolsCmd) Run(ctx context.Context, client *sdk.Client, ex
 		GeckodriverInstallDir:      c.GeckodriverInstallDir,
 		EdgeVersion:                c.EdgeVersion,
 		EdgeDriverInstallDir:       c.EdgeDriverInstallDir,
+
+		Xvfb: c.Xvfb,
 
 		Explicit: explicit,
 	})
@@ -197,6 +203,19 @@ func (c *installEdgeDriverCmd) Run(ctx context.Context, client *sdk.Client) erro
 		return err
 	}
 	return installer.InstallEdgeDriver(ctx, browser.EdgeDriverOptions{InstallDir: c.InstallDir})
+}
+
+type startXvfbCmd struct {
+	Display string `help:"X display to start Xvfb on, and to export as DISPLAY." default:":99"`
+	Screen  string `help:"Geometry and colour depth of the virtual screen, as WIDTHxHEIGHTxDEPTH." default:"1280x1024x24"`
+}
+
+func (c *startXvfbCmd) Run(ctx context.Context, client *sdk.Client) error {
+	installer, err := browser.NewInstaller(client, os.Stderr)
+	if err != nil {
+		return err
+	}
+	return installer.StartXvfb(ctx, browser.XvfbOptions{Display: c.Display, Screen: c.Screen})
 }
 
 func main() {

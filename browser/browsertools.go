@@ -33,6 +33,9 @@ type BrowserToolsOptions struct {
 	EdgeVersion                string
 	EdgeDriverInstallDir       string
 
+	// Xvfb starts a virtual display once everything else is installed.
+	Xvfb bool
+
 	Explicit ExplicitFlags
 }
 
@@ -59,6 +62,13 @@ func (i *Installer) InstallBrowserTools(ctx context.Context, opts BrowserToolsOp
 	if err != nil {
 		return err
 	}
+	// Xvfb runs last, but a run that could only fail there fails here instead,
+	// before the browsers are downloaded.
+	if opts.Xvfb {
+		if err := i.checkXvfb(XvfbOptions{}.withDefaults()); err != nil {
+			return err
+		}
+	}
 
 	for _, c := range i.browserToolsComponents(opts) {
 		if !c.Enabled {
@@ -73,6 +83,13 @@ func (i *Installer) InstallBrowserTools(ctx context.Context, opts BrowserToolsOp
 		default:
 			return err
 		}
+	}
+
+	// Xvfb is not a component: it is never on by default, so the skip policy has
+	// nothing to decide, and macOS needs no display rather than lacking support
+	// for one.
+	if opts.Xvfb {
+		return i.StartXvfb(ctx, XvfbOptions{})
 	}
 	return nil
 }

@@ -1,6 +1,6 @@
 # setup-browser-tools
 
-Installs browsers and browser-testing tools into a CircleCI job: Google Chrome, Chrome for Testing, ChromeDriver, Microsoft Edge and its WebDriver, Firefox, and geckodriver. Each is a subcommand, and `install-browser-tools` installs a default set in one step.
+Installs browsers and browser-testing tools into a CircleCI job: Google Chrome, Chrome for Testing, ChromeDriver, Microsoft Edge and its WebDriver, Firefox, and geckodriver. Each is a subcommand, and `install-browser-tools` installs a default set in one step. `start-xvfb` gives headed browser tests on Linux a virtual display.
 
 ## Usage
 
@@ -44,6 +44,7 @@ The full `github.com/` path and the `--` separator are both required. A bare
 - **Verifies downloads**: SHA-256/512 checksums for Firefox, plus OpenPGP signature verification of the checksum manifest
 - **Caches** the Firefox installer, and the Chrome package on Debian/Ubuntu and RHEL, via the CircleCI job cache, for when downloads are unreliable
 - **Records what it installed** in `$HOME/.browser-versions`, one line per browser
+- **Starts a virtual display** (Xvfb) for headed browser tests on Linux, and exports `DISPLAY` to later steps
 - Reads a version from an environment variable, so `--version "$CHROME_VERSION"` works
 
 ## Subcommands
@@ -58,6 +59,7 @@ The full `github.com/` path and the `--` separator are both required. A bare
 | `install-chrome-for-testing` | Chrome for Testing, and its matching ChromeDriver |
 | `install-edge` | Microsoft Edge |
 | `install-edge-driver` | Edge WebDriver matching the installed Edge |
+| `start-xvfb` | Xvfb, started on a virtual display for later steps |
 
 ## Flags
 
@@ -84,6 +86,7 @@ The full `github.com/` path and the `--` separator are both required. A bare
 | `--geckodriver-install-dir` | string | `/usr/local/bin` | Directory to install geckodriver into |
 | `--edge-version` | string | `latest` | Version of Edge to install |
 | `--edge-driver-install-dir` | string | `/usr/local/bin` | Directory to install Edge WebDriver into |
+| `--xvfb` | bool | `false` | After installing, start Xvfb on `:99` and export `DISPLAY`, as `start-xvfb` does with its defaults |
 
 ### `install-chrome`
 
@@ -137,6 +140,39 @@ The full `github.com/` path and the `--` separator are both required. A bare
 |---|---|---|---|
 | `--install-dir` | string | `/usr/local/bin` | Directory to install into |
 
+### `start-xvfb`
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--display` | string | `:99` | X display to start Xvfb on, and to export as `DISPLAY` |
+| `--screen` | string | `1280x1024x24` | Geometry and colour depth of the virtual screen, as `WIDTHxHEIGHTxDEPTH` |
+
+## Headed browsers on Linux
+
+A browser run without `--headless` needs an X display, which a Linux job does
+not have. `start-xvfb`, or `--xvfb` on `install-browser-tools`, provides one:
+
+- Installs Xvfb when it is not already on `PATH`: `xvfb` on Debian/Ubuntu and
+  Alpine, `xorg-x11-server-Xvfb` on RHEL. This needs root or `sudo`; Xvfb itself
+  runs as the job user.
+- Starts Xvfb on the display, unless a server is already answering there, in
+  which case it is reused. Xvfb keeps running after the step ends, for the rest
+  of the job, and logs to `$TMPDIR/xvfb-<display number>.log` (`/tmp` when
+  `TMPDIR` is unset).
+- Exports `DISPLAY` through `$BASH_ENV`, so later steps that run in bash see it.
+  Without `$BASH_ENV`, which CircleCI always sets, it fails rather than starting
+  a display no later step could find.
+
+On macOS it does nothing: the job already has a display.
+
+```yaml
+steps:
+  - browser-tools/install-browser-tools:
+      with:
+        xvfb: true
+  - run: npm run test:headed  # DISPLAY is set
+```
+
 ## Version resolution
 
 `latest` resolves the current stable release from the vendor. Any other value is installed as given.
@@ -181,6 +217,7 @@ set it there:
 - `install-firefox` verifies the checksum manifest's signature with `gpg`. On Debian/Ubuntu and RHEL a missing `gpg` is installed along with Firefox's other dependencies (`gnupg` or `gnupg2`); on macOS it comes from `brew`
 - `brew` on `PATH` for `install-edge` on macOS
 - `install-chromedriver` needs Chrome already installed; `install-edge-driver` needs Edge
+- `start-xvfb` and `--xvfb` need `$BASH_ENV`, which CircleCI sets in every job, to pass `DISPLAY` on
 
 Without root or `sudo`, a subcommand that would run the package manager or write to a directory the job user can't write fails before downloading anything, and says which. The drivers (`install-chromedriver` outside Alpine, `install-geckodriver`, `install-edge-driver`) need neither when `--install-dir` is writable.
 
@@ -242,5 +279,6 @@ Coverage varies by browser, because the vendors publish different builds. The di
 | `install-chrome-for-testing` | yes | yes | no | no | no | no |
 | `install-edge` | yes | yes | no | no | no | no |
 | `install-edge-driver` | yes | yes | no | no | no | no |
+| `start-xvfb` | not needed | yes | yes | yes | yes | no |
 
 Asking for a browser on a platform it is not published for is an error. The exception is `install-browser-tools`: a component that is on only by default is warned about and skipped, so a bare run on Alpine installs Chromium, ChromeDriver and geckodriver, and reports why it skipped Firefox. Naming that component explicitly makes it an error instead.
