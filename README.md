@@ -286,14 +286,16 @@ Coverage varies by browser, because the vendors publish different builds. The di
 |---|---|---|---|---|---|---|
 | `install-chrome` | yes | yes | yes, as Chromium | yes | Alpine only, as Chromium | no |
 | `install-chromedriver` | yes | yes | yes | `unzip` only | Alpine only | no |
-| `install-firefox` | yes | yes | no | yes | no | no |
+| `install-firefox` | yes | yes | no | yes | Firefox 136 and later, not on Alpine | no |
 | `install-geckodriver` | yes | yes | yes | yes | yes | no |
-| `install-chrome-for-testing` | yes | yes | no | no | no | no |
+| `install-chrome-for-testing` | yes | yes | no | no | Debian/Ubuntu only, 153.0.8001.0 and later | no |
 | `install-edge` | yes | yes | no | no | no | no |
 | `install-edge-driver` | yes | yes | no | no | no | no |
 | `start-xvfb` | not needed | yes | yes | yes | yes | no |
 
 Asking for a browser on a platform it is not published for is an error. The exception is `install-browser-tools`: a component that is on only by default is warned about and skipped, so a bare run on Alpine installs Chromium, ChromeDriver and geckodriver, and reports why it skipped Firefox. Naming that component explicitly makes it an error instead.
+
+Google publishes no Google Chrome for Linux ARM64, so `install-chrome` and `install-chromedriver`, which matches the driver to the installed Chrome, refuse it outside Alpine. Chrome for Testing is published for Linux ARM64: on Debian/Ubuntu arm64, `install-chrome-for-testing` installs it with its matching chromedriver. A bare `install-browser-tools` there installs Firefox and geckodriver and skips Chrome and ChromeDriver; add `--chrome-for-testing --chrome-for-testing-driver` for a Chrome.
 
 ## Development
 

@@ -57,6 +57,22 @@ func TestFirefoxRelease(t *testing.T) {
 			wantURL:      "https://archive.mozilla.org/pub/firefox/releases/140.9.1esr/linux-x86_64/en-US/firefox-140.9.1esr.tar.xz",
 		},
 		{
+			name:         "linux arm64 uses Mozilla's linux-aarch64 directory",
+			distro:       DistroDebian,
+			arch:         ArchARM64,
+			version:      "157.0.1",
+			wantFilename: "firefox-157.0.1.tar.xz",
+			wantURL:      "https://archive.mozilla.org/pub/firefox/releases/157.0.1/linux-aarch64/en-US/firefox-157.0.1.tar.xz",
+		},
+		{
+			name:         "linux arm64 at the first release with an aarch64 build",
+			distro:       DistroRHEL,
+			arch:         ArchARM64,
+			version:      "136.0",
+			wantFilename: "firefox-136.0.tar.xz",
+			wantURL:      "https://archive.mozilla.org/pub/firefox/releases/136.0/linux-aarch64/en-US/firefox-136.0.tar.xz",
+		},
+		{
 			name:         "macOS uses a dmg with a space in the name",
 			distro:       DistroMacOS,
 			arch:         ArchARM64,
@@ -94,6 +110,13 @@ func TestFirefoxReleaseManifestEntryIsTheFullPath(t *testing.T) {
 			arch:    ArchAMD64,
 			version: "149.0.2",
 			want:    "linux-x86_64/en-US/firefox-149.0.2.tar.xz",
+		},
+		{
+			name:    "linux arm64",
+			distro:  DistroDebian,
+			arch:    ArchARM64,
+			version: "157.0.1",
+			want:    "linux-aarch64/en-US/firefox-157.0.1.tar.xz",
 		},
 		{
 			name:    "macOS",
@@ -241,7 +264,7 @@ func TestInstallFirefoxUnsupportedPlatforms(t *testing.T) {
 		wantReason string
 	}{
 		{name: "Alpine", distro: DistroAlpine, arch: ArchAMD64, wantReason: "Alpine build"},
-		{name: "Linux ARM64", distro: DistroDebian, arch: ArchARM64, wantReason: "linux-x86_64"},
+		{name: "Alpine arm64", distro: DistroAlpine, arch: ArchARM64, wantReason: "Alpine build"},
 	}
 
 	for _, tc := range tests {
@@ -253,6 +276,28 @@ func TestInstallFirefoxUnsupportedPlatforms(t *testing.T) {
 			assert.Assert(t, strings.Contains(err.Error(), tc.wantReason), "got %v", err)
 		})
 	}
+}
+
+func TestFirefoxReleaseRefusesReleasesWithNoLinuxARM64Build(t *testing.T) {
+	// Mozilla's archive has no linux-aarch64 directory before 136, so asking for
+	// an older release is refused by name rather than failing as a 404. The
+	// cut-off is by major, so 136.0 itself is accepted.
+	for _, version := range []string{"135.0.1", "128.0esr"} {
+		t.Run(version, func(t *testing.T) {
+			i, _ := testInstaller(t, installerOpts{distro: DistroDebian, arch: ArchARM64})
+
+			_, err := i.firefoxRelease(version)
+			assert.Assert(t, IsUnsupported(err), "got %v", err)
+			assert.Assert(t, strings.Contains(err.Error(), "Firefox "+version), "got %v", err)
+		})
+	}
+
+	t.Run("x86-64 is not cut off", func(t *testing.T) {
+		i, _ := testInstaller(t, installerOpts{distro: DistroDebian, arch: ArchAMD64})
+
+		_, err := i.firefoxRelease("128.0esr")
+		assert.NilError(t, err)
+	})
 }
 
 func TestVerifyFirefox(t *testing.T) {

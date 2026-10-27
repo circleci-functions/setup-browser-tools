@@ -14,6 +14,10 @@ import (
 // than .tar.bz2.
 const firefoxXZFrom = 135
 
+// firefoxARM64From is the first major release Mozilla publishes a linux-aarch64
+// build for. The archive has none for 135.x, nor for the 128 and earlier ESRs.
+const firefoxARM64From = 136
+
 // usrLocalBin is where a Firefox symlink is always created, in addition to
 // --install-dir, because it is on PATH in every CircleCI image.
 const usrLocalBin = "/usr/local/bin"
@@ -56,6 +60,13 @@ func (i *Installer) InstallFirefox(ctx context.Context, opts FirefoxOptions) err
 		return err
 	}
 
+	// Worked out before anything is replaced, so that a version with no build
+	// for this host is refused without removing the Firefox already there.
+	release, err := i.firefoxRelease(version)
+	if err != nil {
+		return err
+	}
+
 	if installed, found := i.installedFirefoxVersion(ctx); found {
 		if installed == version {
 			i.logf("Firefox %s is already installed", installed)
@@ -63,11 +74,6 @@ func (i *Installer) InstallFirefox(ctx context.Context, opts FirefoxOptions) err
 		}
 		i.logf("Firefox %s is installed; replacing it with %s", installed, version)
 		_ = i.Runner.Exec(ctx, "rm", "-f", filepath.Join(opts.InstallDir, "firefox"), usrLocalBin+"/firefox")
-	}
-
-	release, err := i.firefoxRelease(version)
-	if err != nil {
-		return err
 	}
 
 	if err := i.prepareFirefoxHost(ctx, opts.InstallDir); err != nil {
@@ -107,9 +113,6 @@ func (i *Installer) firefoxSupported() error {
 	if i.Platform.Distro == DistroAlpine {
 		return Unsupported("Firefox", i.Platform, "Mozilla publishes no Alpine build")
 	}
-	if i.Platform.IsLinuxARM64() {
-		return Unsupported("Firefox", i.Platform, "only linux-x86_64 builds are published")
-	}
 	return nil
 }
 
@@ -144,6 +147,8 @@ func (i *Installer) resolveFirefoxVersion(ctx context.Context, requested string)
 // archive is saved under its own name rather than the orb's flattened
 // "linux-x86_64-en-US-firefox-149.0.tar.xz"; the manifest is then looked up by
 // full path, which is unambiguous and needs none of the orb's perl rewriting.
+// A release older than Mozilla's first Linux ARM64 build is unsupported there,
+// rather than left to fail later as a missing download.
 func (i *Installer) firefoxRelease(version string) (firefoxRelease, error) {
 	major, err := majorVersion(version)
 	if err != nil {
@@ -156,6 +161,13 @@ func (i *Installer) firefoxRelease(version string) (firefoxRelease, error) {
 		rel.Filename = "Firefox " + version + ".dmg"
 	} else {
 		rel.Platform = "linux-x86_64"
+		if i.Platform.Arch == ArchARM64 {
+			if major < firefoxARM64From {
+				return firefoxRelease{}, Unsupported("Firefox "+version, i.Platform,
+					fmt.Sprintf("Mozilla publishes Linux ARM64 builds from Firefox %d on", firefoxARM64From))
+			}
+			rel.Platform = "linux-aarch64"
+		}
 		ext := ".tar.bz2"
 		if major >= firefoxXZFrom {
 			ext = ".tar.xz"

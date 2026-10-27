@@ -43,8 +43,11 @@ func (i *Installer) InstallChromeDriver(ctx context.Context, opts ChromeDriverOp
 	if i.Platform.Distro == DistroAlpine {
 		return i.installChromeDriverAlpine(ctx)
 	}
+	// The driver is matched to an installed Google Chrome, which has no Linux
+	// ARM64 build. Chrome for Testing does, and brings a driver to match.
 	if i.Platform.IsLinuxARM64() {
-		return Unsupported("ChromeDriver", i.Platform, "Google publishes no Linux ARM64 build")
+		return Unsupported("ChromeDriver", i.Platform,
+			"it is matched to Google Chrome, which has no Linux ARM64 build; use install-chrome-for-testing, which installs a matching chromedriver")
 	}
 
 	chromeVersion, err := i.chromeVersionForDriver(ctx)

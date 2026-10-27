@@ -24,7 +24,9 @@ func TestChromeForTestingPlatform(t *testing.T) {
 		{name: "macOS arm64", distro: DistroMacOS, arch: ArchARM64, want: "mac-arm64"},
 		{name: "macOS amd64", distro: DistroMacOS, arch: ArchAMD64, want: "mac-x64"},
 		{name: "Debian amd64", distro: DistroDebian, arch: ArchAMD64, want: "linux64"},
-		{name: "Debian arm64 is unsupported", distro: DistroDebian, arch: ArchARM64, wantErr: true},
+		{name: "Debian arm64", distro: DistroDebian, arch: ArchARM64, want: "linux-arm64"},
+		{name: "Alpine arm64 is unsupported", distro: DistroAlpine, arch: ArchARM64, wantErr: true},
+		{name: "RHEL arm64 is unsupported", distro: DistroRHEL, arch: ArchARM64, wantErr: true},
 		{name: "Alpine is unsupported rather than a silent no-op", distro: DistroAlpine, arch: ArchAMD64, wantErr: true},
 		{name: "RHEL is unsupported rather than a silent no-op", distro: DistroRHEL, arch: ArchAMD64, wantErr: true},
 	}
