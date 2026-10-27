@@ -429,7 +429,7 @@ func TestInstallChromeWithCacheInstallsTheCachedPackage(t *testing.T) {
 			i, calls := testInstaller(t, installerOpts{distro: DistroDebian, endpoint: srv.URL})
 			i.Fetcher = Fetcher{HTTPClient: srv.Client()}
 			opts := ChromeOptions{Channel: ChannelStable, CacheKey: "v1", UseCache: true}
-			dir, err := chromeCacheDir(ChromeCacheKey(i.Host, opts.CacheKey, opts.Channel, "147.0.7727.55"))
+			dir, err := cacheDir(ChromeCacheKey(i.Host, opts.CacheKey, opts.Channel, "147.0.7727.55"))
 			assert.NilError(t, err)
 			pkg := filepath.Join(dir, "chrome.deb")
 			if cached {

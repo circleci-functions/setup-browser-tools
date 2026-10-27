@@ -197,16 +197,16 @@ The install only warns, and changes nothing, when:
 
 `install-chrome` and `install-firefox` accept `--use-cache`, which saves to the CircleCI job cache and restores from it on later runs. It increases cost and rarely speeds things up, so it is off by default; reach for it when downloads from a vendor mirror are unreliable.
 
-What is cached differs. For Firefox it is the downloaded installer. For Chrome it is the downloaded `.deb` or `.rpm`, kept under the user's cache directory, and only on Debian/Ubuntu and RHEL: on Alpine and macOS nothing is cached. A restored package is installed with apt or yum just as a fresh download is, so Chrome's shared-library dependencies come with it. With `--use-cache`, `latest` on Debian/Ubuntu installs Google's current-release `.deb` rather than adding Google's apt repository.
+What is cached differs, but both are kept under the user's cache directory, so a restore needs no root. For Firefox it is the downloaded installer together with Mozilla's signing key, the checksum manifest (`SHA256SUMS` or `SHA512SUMS`) and its signature. A hit is verified from those, so it needs no access to Mozilla at all. For Chrome it is the downloaded `.deb` or `.rpm`, and only on Debian/Ubuntu and RHEL: on Alpine and macOS nothing is cached. A restored package is installed with apt or yum just as a fresh download is, so Chrome's shared-library dependencies come with it. With `--use-cache`, `latest` on Debian/Ubuntu installs Google's current-release `.deb` rather than adding Google's apt repository.
 
 Keys are:
 
 ```
 setup-browser-tools-chrome-<cache-key>-<channel>-<version>-<os>-<arch>
-setup-browser-tools-firefox-<cache-key>-<version>-<os>-<arch>
+setup-browser-tools-firefox-release-<cache-key>-<version>-<os>-<arch>
 ```
 
-`--cache-key` (default `v1`) is the prefix to bump when an entry needs invalidating. Firefox is not cached when `--version` is `latest`, since the key would pin whichever version it first resolved. A restored Firefox installer is checksum- and signature-verified exactly as a fresh download is.
+`--cache-key` (default `v1`) is the prefix to bump when an entry needs invalidating. Firefox is not cached when `--version` is `latest`, since the key would pin whichever version it first resolved. A restored Firefox installer is checksum- and signature-verified exactly as a fresh download is; one that is incomplete or fails verification is discarded and downloaded again.
 
 Cache failures are never fatal: a cache miss, an unreachable cache, or running outside a CircleCI job all fall through to a normal install.
 
