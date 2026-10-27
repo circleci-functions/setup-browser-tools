@@ -108,6 +108,7 @@ jobs:
       - acceptance:
           run: TestAcceptanceXvfb
 
+
   # Real installs against real images. Nothing else in this repo executes an
   # install: the unit tests assert against the same reading of the orb that let
   # its own missing-else branches survive, so this is the only thing that can
@@ -336,6 +337,15 @@ jobs:
             chrome --version
             chromedriver --version
 
+  # A Firefox cache hit must install with Mozilla unreachable, which is what
+  # --use-cache is for. The test reinstalls from the job's own cache with
+  # archive.mozilla.org blocked.
+  acceptance-debian-firefox-cache:
+    executor: debian
+    steps:
+      - acceptance:
+          run: TestAcceptanceFirefoxCache
+
 workflows:
   test-publish:
     jobs:
@@ -372,6 +382,8 @@ workflows:
       - install-macos-edge:
           requires: [build]
       - install-debian-opt-in-set:
+          requires: [build]
+      - acceptance-debian-firefox-cache:
           requires: [build]
       - acceptance-debian-geckodriver:
           requires: [build]

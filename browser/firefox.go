@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -79,7 +80,8 @@ func (i *Installer) InstallFirefox(ctx context.Context, opts FirefoxOptions) err
 	}
 	defer cleanup()
 
-	archive, err := i.fetchAndVerifyFirefox(ctx, dir, release, opts)
+	downloads, key := i.firefoxDownloadDir(dir, i.firefoxCacheKey(version, opts))
+	archive, err := i.fetchAndVerifyFirefox(ctx, downloads, release, key)
 	if err != nil {
 		return err
 	}
@@ -95,8 +97,8 @@ func (i *Installer) InstallFirefox(ctx context.Context, opts FirefoxOptions) err
 	i.logf("installed Firefox %s", installed)
 	RecordVersion(i.Out, "Firefox", installed)
 
-	if i.firefoxCacheKey(version, opts) != "" {
-		i.Cache.Save(ctx, i.firefoxCacheKey(version, opts), []string{archive})
+	if key != "" {
+		i.Cache.Save(ctx, key, []string{downloads})
 	}
 	return nil
 }
@@ -227,21 +229,64 @@ func (i *Installer) withGPG(gpgPackage string, packages ...string) []string {
 	return append(packages, gpgPackage)
 }
 
-// fetchAndVerifyFirefox downloads the archive and checks it, returning the local
-// path. Verification is GPG over the checksum manifest, then the manifest's
-// digest over the archive, so a cache hit is verified exactly as a fresh
-// download is.
-func (i *Installer) fetchAndVerifyFirefox(ctx context.Context, dir string, rel firefoxRelease, opts FirefoxOptions) (string, error) {
-	archive := filepath.Join(dir, rel.Filename)
+// firefoxKeyFile is the local name of Mozilla's release signing key.
+const firefoxKeyFile = "mozilla.key"
 
-	key := i.firefoxCacheKey(rel.Version, opts)
-	restored := key != "" && i.Cache.Restore(ctx, key, archive)
-	if !restored {
-		if _, err := i.Fetcher.Download(ctx, rel.URL, dir, rel.Filename); err != nil {
-			return "", err
+// firefoxManifests are the checksum manifests a release may publish, in the
+// order they are tried. SHA256SUMS comes first with SHA512SUMS as a fallback,
+// matching the orb, since older releases publish only one of them.
+var firefoxManifests = []string{"SHA256SUMS", "SHA512SUMS"}
+
+// firefoxDownloadDir picks where the release is downloaded to. With caching on
+// that is the cache directory for key, so the entry is saved from, and restored
+// to, the same path in every pipeline; otherwise it is tmp, which is removed
+// afterwards. A cache directory that cannot be created turns caching off rather
+// than failing the install, so the key comes back empty then.
+func (i *Installer) firefoxDownloadDir(tmp, key string) (dir, cacheKey string) {
+	if key == "" {
+		return tmp, ""
+	}
+	dir, err := cacheDir(key)
+	if err == nil {
+		err = os.MkdirAll(dir, 0o750)
+	}
+	if err != nil {
+		i.logf("not caching Firefox: %v", err)
+		return tmp, ""
+	}
+	return dir, key
+}
+
+// fetchAndVerifyFirefox returns the path of a verified archive in dir.
+// Verification is GPG over the checksum manifest, then the manifest's digest
+// over the archive.
+//
+// With a cache key, dir is first restored from the job cache. The entry holds
+// the signing key, manifest and signature alongside the archive, so a hit is
+// verified exactly as a fresh download is without contacting Mozilla, which is
+// what makes --use-cache useful when Mozilla is unreachable. An entry that is
+// incomplete or fails verification is discarded and the release downloaded
+// again: a bad cache must not fail an install that would otherwise succeed.
+func (i *Installer) fetchAndVerifyFirefox(ctx context.Context, dir string, rel firefoxRelease, cacheKey string) (string, error) {
+	if cacheKey != "" {
+		i.Cache.Restore(ctx, cacheKey, dir)
+		archive, err := i.verifyCachedFirefox(ctx, dir, rel)
+		if err == nil {
+			i.logf("using Firefox %s from the job cache", rel.Version)
+			return archive, nil
+		}
+		if hasContent(dir) {
+			i.logf("discarding cached Firefox %s and downloading it again: %v", rel.Version, err)
+			if err := emptyDir(dir); err != nil {
+				return "", err
+			}
 		}
 	}
 
+	archive, err := i.Fetcher.Download(ctx, rel.URL, dir, rel.Filename)
+	if err != nil {
+		return "", err
+	}
 	manifest, err := i.fetchVerifiedSums(ctx, dir, rel.Version)
 	if err != nil {
 		return "", err
@@ -252,20 +297,61 @@ func (i *Installer) fetchAndVerifyFirefox(ctx context.Context, dir string, rel f
 	return archive, nil
 }
 
+// verifyCachedFirefox verifies an archive already in dir against the signing
+// key, manifest and signature beside it, fetching nothing. Any of them missing
+// is an error, as is a manifest whose signature does not verify.
+func (i *Installer) verifyCachedFirefox(ctx context.Context, dir string, rel firefoxRelease) (string, error) {
+	archive := filepath.Join(dir, rel.Filename)
+	key := filepath.Join(dir, firefoxKeyFile)
+	if !hasContent(archive) || !hasContent(key) {
+		return "", errors.New("no cached archive and signing key")
+	}
+
+	for _, name := range firefoxManifests {
+		manifest := filepath.Join(dir, name)
+		sig := manifest + ".asc"
+		if !hasContent(manifest) || !hasContent(sig) {
+			continue
+		}
+		if err := VerifyGPG(ctx, i.Runner, i.Host, key, sig, manifest); err != nil {
+			return "", err
+		}
+		if err := VerifySums(manifest, rel.ManifestEntry, archive); err != nil {
+			return "", err
+		}
+		return archive, nil
+	}
+	return "", errors.New("no cached checksum manifest with its signature")
+}
+
+// emptyDir removes everything in dir but dir itself, so nothing from a
+// discarded cache entry is mistaken for part of the download that replaces it.
+func emptyDir(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", dir, err)
+	}
+	for _, e := range entries {
+		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+			return fmt.Errorf("remove %s: %w", filepath.Join(dir, e.Name()), err)
+		}
+	}
+	return nil
+}
+
 // fetchVerifiedSums downloads the checksum manifest and its signature, verifies
 // the signature against Mozilla's release key, and returns the manifest path.
-// SHA256SUMS is tried first with SHA512SUMS as a fallback, matching the orb,
-// since older releases publish only one of them.
+// The manifests are tried in firefoxManifests order.
 func (i *Installer) fetchVerifiedSums(ctx context.Context, dir, version string) (string, error) {
 	base := i.firefoxBaseURL(version)
 
-	key, err := i.Fetcher.Download(ctx, base+"/KEY", dir, "mozilla.key")
+	key, err := i.Fetcher.Download(ctx, base+"/KEY", dir, firefoxKeyFile)
 	if err != nil {
 		return "", err
 	}
 
 	var lastErr error
-	for _, name := range []string{"SHA256SUMS", "SHA512SUMS"} {
+	for _, name := range firefoxManifests {
 		manifest, err := i.Fetcher.Download(ctx, base+"/"+name, dir, name)
 		if err != nil {
 			lastErr = err
