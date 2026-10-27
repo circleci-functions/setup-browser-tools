@@ -37,6 +37,7 @@ func (i *Installer) InstallChrome(ctx context.Context, opts ChromeOptions) error
 	}
 
 	if i.chromeAlreadyInstalled(ctx, target, opts) {
+		i.exportChromeBin(ctx, opts.Channel)
 		return nil
 	}
 	if err := i.requirePrivilege("Chrome", "run "+i.chromeInstaller()); err != nil {
@@ -53,6 +54,7 @@ func (i *Installer) InstallChrome(ctx context.Context, opts ChromeOptions) error
 	}
 	i.logf("installed Chrome %s", installed)
 	RecordVersion(i.Out, "Chrome", installed)
+	i.exportChromeBin(ctx, opts.Channel)
 
 	if opts.UseCache && i.chromePackageCached() {
 		key := ChromeCacheKey(i.Host, opts.CacheKey, opts.Channel, target)
@@ -148,19 +150,26 @@ func (i *Installer) chromeBinaries(channel string) []string {
 }
 
 func (i *Installer) installedChromeVersion(ctx context.Context, channel string) (string, bool) {
-	for _, bin := range i.chromeBinaries(channel) {
-		if !i.Host.has(bin) {
+	_, version, found := i.installedChrome(ctx, channel)
+	return version, found
+}
+
+// installedChrome returns the first of the channel's binaries that runs and
+// reports a version, along with that version.
+func (i *Installer) installedChrome(ctx context.Context, channel string) (bin, version string, found bool) {
+	for _, candidate := range i.chromeBinaries(channel) {
+		if !i.Host.has(candidate) {
 			continue
 		}
-		banner, err := i.Runner.Output(ctx, bin, "--version")
+		banner, err := i.Runner.Output(ctx, candidate, "--version")
 		if err != nil {
 			continue
 		}
 		if v := ParseBrowserVersion(banner); v != "" {
-			return v, true
+			return candidate, v, true
 		}
 	}
-	return "", false
+	return "", "", false
 }
 
 // removeChrome removes only the given channel's Chrome, so replacing beta
@@ -258,10 +267,16 @@ func chromeMacApp(channel string) string {
 	return "/Applications/Google Chrome.app"
 }
 
+// macAppBinary is the executable inside a Chrome app bundle, which is named
+// after the bundle.
+func macAppBinary(app string) string {
+	return filepath.Join(app, "Contents", "MacOS", strings.TrimSuffix(filepath.Base(app), ".app"))
+}
+
 // writeChromeWrapper puts a google-chrome-<channel> script on PATH, since the
 // macOS package only installs an app bundle.
 func (i *Installer) writeChromeWrapper(ctx context.Context, dir, channel, app string) error {
-	binary := filepath.Join(app, "Contents", "MacOS", strings.TrimSuffix(filepath.Base(app), ".app"))
+	binary := macAppBinary(app)
 	script := fmt.Sprintf("#!/usr/bin/env bash\nexec %q \"$@\"\n", binary)
 
 	name := "google-chrome-" + channel

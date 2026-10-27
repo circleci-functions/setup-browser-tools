@@ -21,6 +21,14 @@ type Installer struct {
 	Out       io.Writer
 	XServer   XServer
 
+	// exported names the browser each *_BIN variable was exported for in this
+	// run. The first install to export one keeps it, so in install-browser-tools
+	// Chrome for Testing, which runs before Chrome, wins CHROME_BIN: it is off by
+	// default, so asking for it alongside Chrome means it is the browser the
+	// tests are meant to drive, just as its chromedriver takes the place of the
+	// default one in settleChromeDrivers.
+	exported map[string]string
+
 	// componentsOverride replaces the aggregate's component list. Tests set it to
 	// exercise the unsupported-platform policy without installing anything.
 	componentsOverride func(BrowserToolsOptions) []component

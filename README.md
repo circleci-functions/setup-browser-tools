@@ -45,6 +45,7 @@ The full `github.com/` path and the `--` separator are both required. A bare
 - **Caches** the Firefox installer, and the Chrome package on Debian/Ubuntu and RHEL, via the CircleCI job cache, for when downloads are unreliable
 - **Records what it installed** in `$HOME/.browser-versions`, one line per browser
 - **Starts a virtual display** (Xvfb) for headed browser tests on Linux, and exports `DISPLAY` to later steps
+- **Tells later steps where the browser is**, as `CHROME_BIN` and `FIREFOX_BIN`
 - Reads a version from an environment variable, so `--version "$CHROME_VERSION"` works
 
 ## Subcommands
@@ -209,6 +210,24 @@ setup-browser-tools-firefox-release-<cache-key>-<version>-<os>-<arch>
 `--cache-key` (default `v1`) is the prefix to bump when an entry needs invalidating. Firefox is not cached when `--version` is `latest`, since the key would pin whichever version it first resolved. A restored Firefox installer is checksum- and signature-verified exactly as a fresh download is; one that is incomplete or fails verification is discarded and downloaded again.
 
 Cache failures are never fatal: a cache miss, an unreachable cache, or running outside a CircleCI job all fall through to a normal install.
+
+## Browser paths
+
+`install-chrome`, `install-chrome-for-testing` and `install-firefox` log where the browser is and export its absolute path for later steps:
+
+| Variable | Set by | Points at |
+|---|---|---|
+| `CHROME_BIN` | `install-chrome` | The channel's `google-chrome-<channel>` (or `google-chrome`) on Linux, `chromium-browser` on Alpine, and the binary inside `Google Chrome.app` (or `Google Chrome Beta.app`) on macOS |
+| `CHROME_BIN` | `install-chrome-for-testing` | The `chrome` link in `--install-dir` |
+| `FIREFOX_BIN` | `install-firefox` | The `firefox` link in `--install-dir` on Linux, and `/Applications/Firefox.app/Contents/MacOS/firefox` on macOS. When Firefox was already installed, the `firefox` found on `PATH` |
+
+They are set when the browser was already installed, too. Each is appended to `$BASH_ENV`, which every later `bash` step sources, so a step that runs another shell, or no shell, does not see them.
+
+A variable already set to a non-empty value in the step's environment is never overwritten, and the log says it was left alone, so setting `CHROME_BIN` or `FIREFOX_BIN` in the job's `environment:` always wins. When one `install-browser-tools` run installs both Chrome and Chrome for Testing, Chrome for Testing gets `CHROME_BIN`: it is installed only when asked for, so asking for it means it is the browser the tests should drive, just as its ChromeDriver takes the place of the default one.
+
+Outside a CircleCI job, where `$BASH_ENV` is unset, nothing is exported. A failure to write `$BASH_ENV` is logged and does not fail the step, since the browser is installed either way.
+
+Karma's Chrome and Firefox launchers read these variables. Other tools need pointing at them: Puppeteer, for one, uses its own bundled Chrome unless told otherwise, so run it as `PUPPETEER_EXECUTABLE_PATH="$CHROME_BIN" npm test` to test against the installed Chrome. Nothing tool-specific like that is set for you.
 
 ## Setting a timeout
 

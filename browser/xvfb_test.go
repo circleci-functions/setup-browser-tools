@@ -66,7 +66,9 @@ func xvfbInstaller(t *testing.T, x *fakeX, opts installerOpts) (*Installer, *[]i
 	return i, calls, &log
 }
 
-// withBashEnv points $BASH_ENV at a fresh file and returns its path.
+// withBashEnv points $BASH_ENV at a fresh file and returns its path. Call it
+// after xvfbInstaller, since testInstaller points $BASH_ENV at a file of its
+// own.
 func withBashEnv(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "bash_env")
@@ -85,13 +87,13 @@ func readBashEnv(t *testing.T, path string) string {
 }
 
 func TestStartXvfbTimesOutWithTheLogTail(t *testing.T) {
-	bashEnv := withBashEnv(t)
 	var lines []string
 	for n := 1; n <= 30; n++ {
 		lines = append(lines, fmt.Sprintf("xvfb line %02d", n))
 	}
 	x := &fakeX{upAfter: -1, log: strings.Join(lines, "\n") + "\n"}
 	i, _, _ := xvfbInstaller(t, x, installerOpts{distro: DistroDebian, onPath: []string{"Xvfb"}})
+	bashEnv := withBashEnv(t)
 
 	err := i.StartXvfb(context.Background(), XvfbOptions{})
 
@@ -104,13 +106,13 @@ func TestStartXvfbTimesOutWithTheLogTail(t *testing.T) {
 }
 
 func TestStartXvfbReportsAnEarlyExit(t *testing.T) {
-	withBashEnv(t)
 	x := &fakeX{
 		upAfter: -1,
 		exitErr: errors.New("Xvfb exited with status 1"),
 		log:     "(EE) Server is already active for display 99\n",
 	}
 	i, _, _ := xvfbInstaller(t, x, installerOpts{distro: DistroDebian, onPath: []string{"Xvfb"}})
+	withBashEnv(t)
 
 	err := i.StartXvfb(context.Background(), XvfbOptions{})
 
@@ -121,10 +123,11 @@ func TestStartXvfbReportsAnEarlyExit(t *testing.T) {
 }
 
 func TestStartXvfbIsANoOpOnMacOS(t *testing.T) {
-	// Not even $BASH_ENV is needed: there is nothing to export.
-	t.Setenv("BASH_ENV", "")
 	x := &fakeX{}
 	i, calls, log := xvfbInstaller(t, x, installerOpts{distro: DistroMacOS, arch: ArchARM64})
+	// Not even $BASH_ENV is needed: there is nothing to export. It is cleared
+	// after the installer, which points it at a file of its own.
+	t.Setenv("BASH_ENV", "")
 
 	assert.NilError(t, i.StartXvfb(context.Background(), XvfbOptions{}))
 
@@ -175,7 +178,7 @@ func TestStartXvfbFailsUpFront(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			x := &fakeX{up: true}
 			i, calls, _ := xvfbInstaller(t, x, installerOpts{distro: DistroDebian})
-			// After the installer, which points $BASH_ENV at a temp file.
+			// After the installer, which points $BASH_ENV at a file of its own.
 			if tc.bashEnv {
 				withBashEnv(t)
 			} else {
@@ -198,6 +201,7 @@ func TestStartXvfbFailsUpFront(t *testing.T) {
 func TestBrowserToolsChecksXvfbBeforeInstalling(t *testing.T) {
 	x := &fakeX{upAfter: 0}
 	i, _, _ := xvfbInstaller(t, x, installerOpts{distro: DistroDebian})
+	// After the installer, which points $BASH_ENV at a file of its own.
 	t.Setenv("BASH_ENV", "")
 	var ran []string
 	stubComponents(i, map[string]error{}, &ran)
