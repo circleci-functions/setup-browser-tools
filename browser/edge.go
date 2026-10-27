@@ -185,16 +185,17 @@ func (i *Installer) InstallEdgeDriver(ctx context.Context, opts EdgeDriverOption
 		return err
 	}
 
-	installed, found := i.installedDriverVersion(ctx, "msedgedriver")
+	driver := filepath.Join(opts.InstallDir, "msedgedriver")
+	installed, found := i.installedDriverVersion(ctx, driver)
 	if !found {
-		return fmt.Errorf("no working msedgedriver on PATH after installing %s", driverVersion)
+		return fmt.Errorf("no working msedgedriver at %s after installing %s", driver, driverVersion)
 	}
 	if !sameMajor(installed, version) {
 		return fmt.Errorf("installed Edge WebDriver is %s, which does not match Edge %s", installed, version)
 	}
 	i.logf("installed Edge WebDriver %s", installed)
 	RecordVersion(i.Out, "Edge WebDriver", installed)
-	return nil
+	return i.putOnPath(opts.InstallDir, "msedgedriver")
 }
 
 // resolveEdgeDriver returns the driver version to install for an Edge version:

@@ -148,6 +148,11 @@ func (i *Installer) installChromeForTestingBrowser(ctx context.Context, dir, ver
 		return err
 	}
 
+	// The symlink comes before the driver, so the directory the driver install
+	// would create has to exist by now.
+	if err := i.Runner.Exec(ctx, "mkdir", "-p", installDir); err != nil {
+		return err
+	}
 	if err := i.Runner.Exec(ctx, "ln", "-sf",
 		filepath.Join(chromeForTestingTree, "chrome"), filepath.Join(installDir, "chrome")); err != nil {
 		return err
@@ -217,14 +222,15 @@ func (i *Installer) installChromeForTestingDriver(ctx context.Context, version, 
 		return err
 	}
 
-	installed, found := i.installedDriverVersion(ctx, "chromedriver")
+	driver := filepath.Join(installDir, "chromedriver")
+	installed, found := i.installedDriverVersion(ctx, driver)
 	if !found {
-		return fmt.Errorf("no working chromedriver on PATH after installing %s", version)
+		return fmt.Errorf("no working chromedriver at %s after installing %s", driver, version)
 	}
 	if installed != version {
 		return fmt.Errorf("installed chromedriver is %s, but %s was requested", installed, version)
 	}
 	i.logf("installed Chrome for Testing chromedriver %s", installed)
 	RecordVersion(i.Out, "Chrome for Testing chromedriver", installed)
-	return nil
+	return i.putOnPath(installDir, "chromedriver")
 }

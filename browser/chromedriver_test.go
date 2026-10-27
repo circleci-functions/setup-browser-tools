@@ -199,6 +199,46 @@ func TestInstallChromeDriverNeedsChrome(t *testing.T) {
 	assert.Assert(t, !IsUnsupported(err))
 }
 
+func TestInstallChromeDriverChecksTheCopyInInstallDir(t *testing.T) {
+	// A matching chromedriver elsewhere on PATH was taken for one in
+	// --install-dir, and the install was skipped with nothing written there.
+	srv := chromeForTestingServer(t)
+	defer srv.Close()
+
+	tests := []struct {
+		name     string
+		onPath   []string
+		wantSkip bool
+	}{
+		{name: "a copy elsewhere on PATH is not this install", onPath: []string{"google-chrome-stable", "chromedriver"}},
+		{name: "the copy in --install-dir is", onPath: []string{"google-chrome-stable", "/opt/drivers/chromedriver"}, wantSkip: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Nothing is writable, so an install that is not skipped stops at the
+			// preflight rather than reaching the network.
+			i, _ := unprivilegedInstaller(t, installerOpts{
+				distro: DistroDebian,
+				onPath: tc.onPath,
+				stdouts: map[string]string{
+					"google-chrome-stable --version": "Google Chrome 120.0.6099.109 \n",
+					"chromedriver --version":         "ChromeDriver 120.0.6099.109 (abc)\n",
+				},
+			})
+			i.Endpoints.ChromeForTesting = srv.URL
+			i.Fetcher = Fetcher{HTTPClient: srv.Client()}
+
+			err := i.InstallChromeDriver(context.Background(), ChromeDriverOptions{InstallDir: "/opt/drivers"})
+			if tc.wantSkip {
+				assert.NilError(t, err)
+				return
+			}
+			assert.ErrorContains(t, err, "ChromeDriver needs root or sudo to write to /opt/drivers")
+		})
+	}
+}
+
 func TestDownloadAndInstallBinaryLeavesWorkingDirClean(t *testing.T) {
 	// The orb unzipped in the checkout and then deleted the stray
 	// LICENSE.chromedriver it left behind.

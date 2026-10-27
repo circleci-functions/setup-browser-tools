@@ -166,5 +166,20 @@ func TestHostWritable(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, len(entries), 0, "the probe file was left behind")
 
-	assert.Assert(t, !Host{}.writable(filepath.Join(dir, "missing")))
+	// A driver install creates its --install-dir, so a missing one is judged by
+	// whether it could be created rather than reported as needing root.
+	assert.Assert(t, Host{}.writable(filepath.Join(dir, "missing", "drivers")))
+
+	file := filepath.Join(dir, "file")
+	assert.NilError(t, os.WriteFile(file, nil, 0o600))
+	assert.Assert(t, !Host{}.writable(filepath.Join(file, "drivers")), "nothing can be created under a file")
+}
+
+func TestDriverInstallPreflightAcceptsAMissingDirectory(t *testing.T) {
+	// Without sudo, a --install-dir that does not exist yet was reported as
+	// needing root, when all it needed was creating.
+	i, _ := testInstaller(t, installerOpts{distro: DistroDebian})
+	i.Runner.Priv = Privilege{}
+
+	assert.NilError(t, i.requireWritable("geckodriver", filepath.Join(t.TempDir(), "home", "drivers")))
 }
