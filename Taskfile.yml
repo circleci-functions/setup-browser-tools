@@ -17,9 +17,51 @@ tasks:
       - go tool golangci-lint run ./...
 
   test:
-    desc: Run unit and acceptance tests (hermetic, no network)
+    desc: Run unit and command-line contract tests (hermetic, no network)
     cmds:
       - go tool gotestsum -- ./...
+
+  acceptance:
+    desc: >-
+      Run the real-install acceptance tests. They skip unless this is a
+      CircleCI job or SETUP_BROWSER_TOOLS_ACCEPTANCE_DISPOSABLE=1 is set; use
+      acceptance-docker to run them locally.
+    cmds:
+      - go tool gotestsum --format standard-verbose -- -tags acceptance -timeout 30m ./acceptance/... {{.CLI_ARGS}}
+
+  build-acceptance:
+    desc: Cross-compile the acceptance suite, so an executor with no Go can run it
+    cmds:
+      - |
+        set -eu
+        for platform in linux/amd64 linux/arm64 darwin/arm64; do
+          os="${platform%/*}"; arch="${platform#*/}"
+          out="dist/acceptance/$os/$arch/acceptance"
+          CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go test -c -tags acceptance -o "$out" ./acceptance
+          echo "built $out"
+        done
+
+  acceptance-docker:
+    desc: >-
+      Run the cross-compiled acceptance suite and binary in a throwaway
+      container. IMAGE picks the image (default cimg/base:current), PLATFORM
+      its platform (default linux/amd64, which every browser supports), and
+      RUN the tests, as a -test.run pattern.
+    deps: [dry-run, build-acceptance]
+    vars:
+      IMAGE: '{{.IMAGE | default "cimg/base:current"}}'
+      PLATFORM: '{{.PLATFORM | default "linux/amd64"}}'
+      RUN: '{{.RUN | default "."}}'
+    cmds:
+      - |
+        set -eu
+        docker run --rm --platform "{{.PLATFORM}}" \
+          -v "$PWD/dist:/home/circleci/project/dist:ro" \
+          -w /home/circleci/project \
+          -e SETUP_BROWSER_TOOLS_ACCEPTANCE_DISPOSABLE=1 \
+          -e SETUP_BROWSER_TOOLS_BINARY="./dist/setup-browser-tools/{{.PLATFORM}}/setup-browser-tools" \
+          "{{.IMAGE}}" \
+          "./dist/acceptance/{{.PLATFORM}}/acceptance" -test.v -test.timeout 30m -test.run '{{.RUN}}'
 
   tidy:
     desc: Tidy go.mod / go.sum
