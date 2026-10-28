@@ -257,6 +257,15 @@ func (i *Installer) withGPG(gpgPackage string, packages ...string) []string {
 // firefoxKeyFile is the local name of Mozilla's release signing key.
 const firefoxKeyFile = "mozilla.key"
 
+// mozillaReleaseKey is the primary key fingerprint of Mozilla's release signing
+// key, "Mozilla Software Releases <release@mozilla.com>", which has signed every
+// release's checksum manifest since Firefox 40. The key itself is still
+// downloaded, from the KEY file beside each release, because Mozilla signs with
+// subkeys it rotates every couple of years; this pin is what stops a key served
+// from the same place as the manifest, or restored from the job cache with it,
+// from vouching for that manifest.
+const mozillaReleaseKey = "14F26682D0916CDD81E37B6D61B7B526D98F0353"
+
 // firefoxManifests are the checksum manifests a release may publish, in the
 // order they are tried. SHA256SUMS comes first with SHA512SUMS as a fallback,
 // matching the orb, since older releases publish only one of them.
@@ -324,7 +333,8 @@ func (i *Installer) fetchAndVerifyFirefox(ctx context.Context, dir string, rel f
 
 // verifyCachedFirefox verifies an archive already in dir against the signing
 // key, manifest and signature beside it, fetching nothing. Any of them missing
-// is an error, as is a manifest whose signature does not verify.
+// is an error, as is a manifest whose signature does not verify or is not by
+// Mozilla's release key, whatever key the entry holds.
 func (i *Installer) verifyCachedFirefox(ctx context.Context, dir string, rel firefoxRelease) (string, error) {
 	archive := filepath.Join(dir, rel.Filename)
 	key := filepath.Join(dir, firefoxKeyFile)
@@ -338,7 +348,7 @@ func (i *Installer) verifyCachedFirefox(ctx context.Context, dir string, rel fir
 		if !hasContent(manifest) || !hasContent(sig) {
 			continue
 		}
-		if err := VerifyGPG(ctx, i.Runner, i.Host, key, sig, manifest); err != nil {
+		if err := i.verifyFirefoxSignature(ctx, key, sig, manifest); err != nil {
 			return "", err
 		}
 		if err := VerifySums(manifest, rel.ManifestEntry, archive); err != nil {
@@ -387,12 +397,22 @@ func (i *Installer) fetchVerifiedSums(ctx context.Context, dir, version string) 
 			lastErr = err
 			continue
 		}
-		if err := VerifyGPG(ctx, i.Runner, i.Host, key, sig, manifest); err != nil {
+		if err := i.verifyFirefoxSignature(ctx, key, sig, manifest); err != nil {
 			return "", err
 		}
 		return manifest, nil
 	}
 	return "", fmt.Errorf("no checksum manifest available for Firefox %s: %w", version, lastErr)
+}
+
+// verifyFirefoxSignature checks manifest is signed by Mozilla's release key,
+// using the copy of the key in keyPath.
+func (i *Installer) verifyFirefoxSignature(ctx context.Context, keyPath, sigPath, manifest string) error {
+	if err := VerifyGPG(ctx, i.Runner, i.Host, keyPath, sigPath, manifest, mozillaReleaseKey); err != nil {
+		return err
+	}
+	i.logf("%s is signed by Mozilla's release key %s", filepath.Base(manifest), mozillaReleaseKey)
+	return nil
 }
 
 func (i *Installer) unpackFirefox(ctx context.Context, dir, archive string, rel firefoxRelease, installDir string) error {

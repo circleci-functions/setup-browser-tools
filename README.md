@@ -41,7 +41,7 @@ The full `github.com/` path and the `--` separator are both required. A bare
 - **Installs a default set** — Chrome, ChromeDriver, Firefox and geckodriver — with one command
 - **Installs individually**, so a job can take only what it needs
 - **Pins versions**, or resolves the latest release from the vendor
-- **Verifies downloads**: SHA-256/512 checksums for Firefox, plus OpenPGP signature verification of the checksum manifest
+- **Verifies downloads**: SHA-256/512 checksums for Firefox, plus OpenPGP signature verification of the checksum manifest against Mozilla's pinned release key
 - **Caches** the Firefox installer, and the Chrome package on Debian/Ubuntu and RHEL, via the CircleCI job cache, for when downloads are unreliable
 - **Records what it installed** in `$HOME/.browser-versions`, one line per browser
 - **Starts a virtual display** (Xvfb) for headed browser tests on Linux, and exports `DISPLAY` to later steps
@@ -207,7 +207,7 @@ setup-browser-tools-chrome-<cache-key>-<channel>-<version>-<os>-<arch>
 setup-browser-tools-firefox-release-<cache-key>-<version>-<os>-<arch>
 ```
 
-`--cache-key` (default `v1`) is the prefix to bump when an entry needs invalidating. Firefox is not cached when `--version` is `latest`, since the key would pin whichever version it first resolved. A restored Firefox installer is checksum- and signature-verified exactly as a fresh download is; one that is incomplete or fails verification is discarded and downloaded again.
+`--cache-key` (default `v1`) is the prefix to bump when an entry needs invalidating. Firefox is not cached when `--version` is `latest`, since the key would pin whichever version it first resolved. A restored Firefox installer is checksum- and signature-verified exactly as a fresh download is, against the pinned key rather than whichever key the entry holds; one that is incomplete or fails verification is discarded and downloaded again.
 
 Cache failures are never fatal: a cache miss, an unreachable cache, or running outside a CircleCI job all fall through to a normal install.
 
@@ -245,7 +245,7 @@ set it there:
 ## Preconditions
 
 - Root, or `sudo` available — browsers install into system directories
-- `install-firefox` verifies the checksum manifest's signature with `gpg`. On Debian/Ubuntu and RHEL a missing `gpg` is installed along with Firefox's other dependencies (`gnupg` or `gnupg2`); on macOS it comes from `brew`
+- `install-firefox` verifies the checksum manifest's signature with `gpg` (2.1 or later). On Debian/Ubuntu and RHEL a missing `gpg` is installed along with Firefox's other dependencies (`gnupg` or `gnupg2`); on macOS it comes from `brew`. The signing key is downloaded with each release, since Mozilla rotates its signing subkeys, but only a signature by a key whose primary key fingerprint is `14F26682D0916CDD81E37B6D61B7B526D98F0353` ("Mozilla Software Releases", which has signed every release since Firefox 40) is accepted. Otherwise any key served from the same place as the manifest, or restored from the job cache with it, would verify it. The key is imported into a temporary keyring, so the job user's keyring is neither used nor changed
 - `brew` on `PATH` for `install-edge` on macOS
 - `install-chromedriver` needs Chrome already installed; `install-edge-driver` needs Edge
 - `start-xvfb` and `--xvfb` need `$BASH_ENV`, which CircleCI sets in every job, to pass `DISPLAY` on

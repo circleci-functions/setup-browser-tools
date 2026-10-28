@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -492,8 +493,11 @@ func firefoxInstaller(t *testing.T, m *fakeMozilla, client *sdk.Client) (*Instal
 	t.Helper()
 
 	i, calls := testInstaller(t, installerOpts{
-		distro:  DistroDebian,
-		stdouts: map[string]string{"firefox --version": "Mozilla Firefox " + cachedFirefoxVersion + "\n"},
+		distro: DistroDebian,
+		stdouts: map[string]string{
+			"firefox --version": "Mozilla Firefox " + cachedFirefoxVersion + "\n",
+			"--verify":          validSig(mozillaReleaseKey),
+		},
 	})
 	i.Endpoints.MozillaArchive = m.srv.URL
 	i.Endpoints.MozillaProduct = m.srv.URL
@@ -537,7 +541,7 @@ func cachedFirefoxSetup(t *testing.T) (opts FirefoxOptions, key, dir string) {
 func gpgVerifications(calls []invocation) [][]string {
 	var got [][]string
 	for _, c := range calls {
-		if c.name == "gpg" && len(c.args) > 0 && c.args[0] == "--verify" {
+		if c.name == "gpg" && slices.Contains(c.args, "--verify") {
 			got = append(got, c.args)
 		}
 	}
@@ -553,8 +557,8 @@ func TestInstallFirefoxDownloadsAgainOverABadCacheEntry(t *testing.T) {
 		name string
 		// files is what the cache entry holds, by file name.
 		files func(archive []byte) map[string]string
-		// rejectSignature makes gpg reject the cached signature.
-		rejectSignature bool
+		// cachedVerify, when set, is what gpg reports for the cached signature.
+		cachedVerify func() (string, error)
 	}{
 		{
 			name: "the archive does not match the manifest",
@@ -577,7 +581,20 @@ func TestInstallFirefoxDownloadsAgainOverABadCacheEntry(t *testing.T) {
 					"SHA256SUMS.asc": "forged",
 				}
 			},
-			rejectSignature: true,
+			cachedVerify: func() (string, error) { return "", errors.New("BAD signature") },
+		},
+		{
+			// A poisoned entry: a key, and a manifest that key really did sign.
+			name: "the signature is good but not by Mozilla's release key",
+			files: func(archive []byte) map[string]string {
+				return map[string]string{
+					archiveName:      string(archive),
+					"mozilla.key":    "some other key",
+					"SHA256SUMS":     firefoxSums(archive),
+					"SHA256SUMS.asc": "signed with some other key",
+				}
+			},
+			cachedVerify: func() (string, error) { return validSig(testOtherKey), nil },
 		},
 		{
 			name: "the signature is missing",
@@ -613,18 +630,21 @@ func TestInstallFirefoxDownloadsAgainOverABadCacheEntry(t *testing.T) {
 			assert.NilError(t, os.RemoveAll(dir))
 
 			i, calls := firefoxInstaller(t, m, srv.Client())
-			if tc.rejectSignature {
+			if tc.cachedVerify != nil {
 				scripted := i.Runner.Executor
 				i.Runner.Executor = func(ctx context.Context, name string, args, env []string, out io.Writer) (string, error) {
 					stdout, err := scripted(ctx, name, args, env, out)
-					if len(gpgVerifications(*calls)) == 1 && name == "gpg" && args[0] == "--verify" {
-						return "", errors.New("BAD signature")
+					if len(gpgVerifications(*calls)) == 1 && name == "gpg" && slices.Contains(args, "--verify") {
+						return tc.cachedVerify()
 					}
 					return stdout, err
 				}
 			}
+			var log strings.Builder
+			i.Out = &log
 
 			assert.NilError(t, i.InstallFirefox(ctx, opts))
+			assert.Assert(t, !strings.Contains(log.String(), "from the job cache"), log.String())
 			assert.Equal(t, len(m.takeRequests()), 4)
 			// The download replaced the bad entry rather than joining it.
 			got, err := os.ReadFile(filepath.Join(dir, archiveName))
@@ -634,6 +654,29 @@ func TestInstallFirefoxDownloadsAgainOverABadCacheEntry(t *testing.T) {
 			assert.NilError(t, err)
 			assert.Equal(t, string(sig), "signature")
 		})
+	}
+}
+
+func TestInstallFirefoxRejectsADownloadNotSignedByMozilla(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	m := newFakeMozilla(t)
+	srv := sdktest.NewServer(t)
+
+	i, calls := firefoxInstaller(t, m, srv.Client())
+	scripted := i.Runner.Executor
+	i.Runner.Executor = func(ctx context.Context, name string, args, env []string, out io.Writer) (string, error) {
+		if name == "gpg" && slices.Contains(args, "--verify") {
+			*calls = append(*calls, invocation{name: name, args: args, env: env})
+			return validSig(testOtherKey), nil
+		}
+		return scripted(ctx, name, args, env, out)
+	}
+
+	err := i.InstallFirefox(context.Background(), FirefoxOptions{Version: cachedFirefoxVersion, InstallDir: usrLocalBin})
+	assert.ErrorContains(t, err, "not by the expected key "+mozillaReleaseKey)
+	for _, c := range *calls {
+		assert.Assert(t, c.name != "ln", "Firefox was installed: %+v", c)
 	}
 }
 

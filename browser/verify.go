@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -117,35 +118,94 @@ func parseSumsLine(line string) (digest, name string, ok bool) {
 	return digest, name, true
 }
 
-// VerifyGPG checks a detached signature over signed, importing keyPath first
-// when non-empty. It shells out to gpg, as the orb does and as the orb's
-// documented requirements already state, rather than taking on an in-process
-// OpenPGP implementation.
+// VerifyGPG checks that sigPath is a good detached signature over signed, made
+// by the key whose primary key fingerprint is wantPrimary or by any of its
+// subkeys. Only the keys in keyPath are consulted. They are imported into a
+// keyring of their own, which is removed afterwards, so the job user's keyring
+// neither supplies a key nor gains one.
 //
-// A missing gpg is an error: skipping the check would leave callers believing a
-// download was verified when it was not.
-func VerifyGPG(ctx context.Context, r *Runner, h Host, keyPath, sigPath, signed string) error {
+// The pin is what makes the check worth having when keyPath comes from the same
+// place as the signature: without it, any key would verify a signature made
+// with it. Pinning the primary key rather than the signing key lets the
+// publisher rotate signing subkeys without breaking verification.
+//
+// It shells out to gpg, as the orb does and as the orb's documented
+// requirements already state, rather than taking on an in-process OpenPGP
+// implementation. A missing gpg is an error: skipping the check would leave
+// callers believing a download was verified when it was not.
+func VerifyGPG(ctx context.Context, r *Runner, h Host, keyPath, sigPath, signed, wantPrimary string) error {
+	name := filepath.Base(signed)
 	if !h.has("gpg") {
-		return fmt.Errorf("gpg is required to verify %s but is not installed", filepath.Base(signed))
+		return fmt.Errorf("gpg is required to verify %s but is not installed", name)
 	}
 
-	if keyPath != "" {
-		if _, err := r.Run(ctx, Command{
+	home, cleanup, err := TempDir("gnupg")
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	// --no-autostart keeps gpg from leaving an agent running for the temporary
+	// home; nothing here needs a secret key.
+	gpg := func(args ...string) Command {
+		return Command{
 			Name:         "gpg",
-			Args:         []string{"--import", keyPath},
+			Args:         append([]string{"--homedir", home, "--batch", "--no-tty", "--no-autostart"}, args...),
 			Unprivileged: true,
 			Quiet:        true,
-		}); err != nil {
-			return fmt.Errorf("import signing key: %w", err)
 		}
 	}
 
-	if _, err := r.Run(ctx, Command{
-		Name:         "gpg",
-		Args:         []string{"--verify", sigPath, signed},
-		Unprivileged: true,
-	}); err != nil {
-		return fmt.Errorf("verify signature on %s: %w", filepath.Base(signed), err)
+	if _, err := r.Run(ctx, gpg("--import", keyPath)); err != nil {
+		return fmt.Errorf("import signing key for %s: %w", name, err)
 	}
-	return nil
+
+	status, err := r.Run(ctx, gpg("--status-fd", "1", "--verify", sigPath, signed))
+	if err != nil {
+		return fmt.Errorf("signature on %s does not verify against key %s: %w%s",
+			name, wantPrimary, err, gpgFailure(status))
+	}
+
+	signers := validSigners(status)
+	if slices.ContainsFunc(signers, func(primary string) bool { return strings.EqualFold(primary, wantPrimary) }) {
+		return nil
+	}
+	if len(signers) == 0 {
+		return fmt.Errorf("gpg reported no valid signature on %s; expected one by key %s", name, wantPrimary)
+	}
+	return fmt.Errorf("signature on %s is by key %s, not by the expected key %s or one of its subkeys",
+		name, strings.Join(signers, ", "), wantPrimary)
+}
+
+// validSigners returns the primary key fingerprint of each good signature in
+// gpg's status output. A VALIDSIG line ends with the primary key's fingerprint
+// whichever of its subkeys made the signature.
+func validSigners(status string) []string {
+	var signers []string
+	for line := range strings.Lines(status) {
+		fields := strings.Fields(line)
+		if len(fields) >= 12 && fields[0] == "[GNUPG:]" && fields[1] == "VALIDSIG" {
+			signers = append(signers, fields[len(fields)-1])
+		}
+	}
+	return signers
+}
+
+// gpgFailureStatus are the status keywords that say why a signature did not
+// verify.
+var gpgFailureStatus = []string{"BADSIG", "ERRSIG", "NO_PUBKEY", "NODATA", "EXPSIG", "REVKEYSIG"}
+
+// gpgFailure returns, for an error message, the status lines explaining a
+// failed verification, since gpg's own explanation is not logged.
+func gpgFailure(status string) string {
+	var reasons []string
+	for line := range strings.Lines(status) {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "[GNUPG:]" && slices.Contains(gpgFailureStatus, fields[1]) {
+			reasons = append(reasons, strings.Join(fields[1:], " "))
+		}
+	}
+	if len(reasons) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(reasons, "; ") + ")"
 }
