@@ -15,12 +15,13 @@ functions:
 jobs:
   test:
     docker:
-      - image: cimg/base:current
+      - image: cimg/<language>:<version>-browsers
     steps:
-      - browser-tools/install-chrome:
-          with:
-            version: 147.0.7727.55
+      - browser-tools/install-browser-tools
 ```
+The `-browsers` variant of a CircleCI language image already has Chrome
+installed. Use `cimg/base` only when you need a browser version that image
+doesn't have.
 
 `circleci function add setup-browser-tools --as browser-tools` writes the
 `functions:` entry at the latest version. The alias is yours to choose. A
