@@ -82,7 +82,7 @@ The full `github.com/` path and the `--` separator are both required. A bare
 | `--chromedriver-install-dir` | string | `/usr/local/bin` | Directory to install ChromeDriver into |
 | `--chrome-for-testing-version` | string | `latest` | Version of Chrome for Testing to install |
 | `--chrome-for-testing-install-dir` | string | `/usr/local/bin` | Directory to symlink Chrome for Testing into and copy its driver into |
-| `--firefox-version` | string | `latest` | Version of Firefox to install |
+| `--firefox-version` | string | `latest` | Version of Firefox to install. With `latest`, an installed Firefox is kept whatever its version; a specific version replaces one of another version. |
 | `--firefox-install-dir` | string | `/usr/local/bin` | Directory to install Firefox into |
 | `--geckodriver-version` | string | `latest` | Release tag of geckodriver to install |
 | `--geckodriver-install-dir` | string | `/usr/local/bin` | Directory to install geckodriver into |
@@ -110,7 +110,7 @@ The full `github.com/` path and the `--` separator are both required. A bare
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--version` | string | `latest` | Version to install, e.g. `149.0.2` or `140.9.1esr` |
+| `--version` | string | `latest` | Version to install, e.g. `149.0.2` or `140.9.1esr`. With `latest`, an installed Firefox is kept whatever its version; a specific version replaces one of another version. |
 | `--install-dir` | string | `/usr/local/bin` | Directory to install into. A symlink is also created in `/usr/local/bin`. |
 | `--use-cache` | bool | `false` | Restore and save the installer via the job cache. Ignored when `--version` is `latest`. |
 | `--cache-key` | string | `v1` | Cache key prefix |

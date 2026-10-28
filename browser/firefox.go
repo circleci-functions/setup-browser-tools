@@ -54,6 +54,10 @@ func (i *Installer) InstallFirefox(ctx context.Context, opts FirefoxOptions) err
 		return err
 	}
 
+	if requested == Latest && i.keepInstalledFirefox(ctx, opts.InstallDir) {
+		return nil
+	}
+
 	version, err := i.resolveFirefoxVersion(ctx, requested)
 	if err != nil {
 		return err
@@ -105,9 +109,24 @@ func (i *Installer) InstallFirefox(ctx context.Context, opts FirefoxOptions) err
 	return nil
 }
 
-// firefoxAlreadyInstalled reports whether the install can be skipped. A
-// Firefox of another version has its links removed, so the install replaces
-// it.
+// keepInstalledFirefox keeps a working Firefox of any version when the latest
+// is requested, as an installed Chrome is kept without --replace-existing. An
+// image's Firefox is otherwise replaced whenever Mozilla has released since the
+// image was built. It runs before "latest" is resolved, so a kept Firefox needs
+// no access to Mozilla.
+func (i *Installer) keepInstalledFirefox(ctx context.Context, installDir string) bool {
+	installed, found := i.installedFirefoxVersion(ctx)
+	if !found {
+		return false
+	}
+	i.logf("Firefox %s is already installed; keeping it (request a specific version to replace it)", installed)
+	i.exportFirefoxBin(false, installDir)
+	return true
+}
+
+// firefoxAlreadyInstalled reports whether the install of a specific version
+// can be skipped. A Firefox of another version has its links removed, so the
+// install replaces it.
 func (i *Installer) firefoxAlreadyInstalled(ctx context.Context, version, installDir string) bool {
 	installed, found := i.installedFirefoxVersion(ctx)
 	if !found {

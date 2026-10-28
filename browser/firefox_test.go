@@ -709,3 +709,103 @@ func TestInstallFirefoxWithoutCacheLeavesNothingBehind(t *testing.T) {
 		})
 	}
 }
+
+// preinstalledFirefox returns an installer for a host whose image ships a
+// Firefox at /usr/bin reporting banner, or failing --version when banner is
+// empty. Once the install has linked its own Firefox that one is found first,
+// as /usr/local/bin precedes /usr/bin on an image's PATH.
+func preinstalledFirefox(t *testing.T, m *fakeMozilla, banner string) (*Installer, *[]invocation) {
+	t.Helper()
+
+	i, calls := firefoxInstaller(t, m, sdktest.NewServer(t).Client())
+	linked := func() bool {
+		return slices.ContainsFunc(*calls, func(c invocation) bool { return c.name == "ln" })
+	}
+	scripted := i.Runner.Executor
+	i.Runner.Executor = func(ctx context.Context, name string, args, env []string, out io.Writer) (string, error) {
+		if name == "firefox" && !linked() {
+			*calls = append(*calls, invocation{name: name, args: args, env: env})
+			if banner == "" {
+				return "", errors.New("firefox: exit status 1")
+			}
+			return banner, nil
+		}
+		return scripted(ctx, name, args, env, out)
+	}
+	i.Host.LookPath = func(name string) (string, error) {
+		switch {
+		case name == "gpg":
+			return "/usr/bin/gpg", nil
+		case name == "firefox" && linked():
+			return "/usr/local/bin/firefox", nil
+		case name == "firefox":
+			return "/usr/bin/firefox", nil
+		}
+		return "", fmt.Errorf("%s: not found", name)
+	}
+	return i, calls
+}
+
+func TestInstallFirefoxLatestKeepsAnInstalledFirefox(t *testing.T) {
+	tests := []struct {
+		name   string
+		banner string
+	}{
+		{name: "older release", banner: "Mozilla Firefox 147.0.3\n"},
+		{name: "ESR", banner: "Mozilla Firefox 153.6.0esr\n"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newFakeMozilla(t)
+			i, calls := preinstalledFirefox(t, m, tc.banner)
+
+			assert.NilError(t, i.InstallFirefox(context.Background(), FirefoxOptions{Version: Latest, InstallDir: usrLocalBin}))
+
+			assert.DeepEqual(t, m.takeRequests(), []string(nil))
+			for _, c := range *calls {
+				assert.Assert(t, c.name == "firefox", "the install went ahead: %+v", c)
+			}
+			assert.Equal(t, bashEnv(t), "export FIREFOX_BIN='/usr/bin/firefox'\n")
+		})
+	}
+}
+
+func TestInstallFirefoxReplacesAnInstalledFirefox(t *testing.T) {
+	tests := []struct {
+		name    string
+		banner  string
+		version string
+	}{
+		{name: "a specific version is requested", banner: "Mozilla Firefox 147.0.3\n", version: cachedFirefoxVersion},
+		{name: "the installed one does not run", banner: "", version: Latest},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("XDG_CACHE_HOME", t.TempDir())
+			m := newFakeMozilla(t)
+			i, calls := preinstalledFirefox(t, m, tc.banner)
+
+			assert.NilError(t, i.InstallFirefox(context.Background(), FirefoxOptions{Version: tc.version, InstallDir: usrLocalBin}))
+
+			assert.Assert(t, slices.Contains(m.takeRequests(),
+				"/"+cachedFirefoxVersion+"/linux-x86_64/en-US/firefox-"+cachedFirefoxVersion+".tar.xz"))
+			assert.Assert(t, slices.ContainsFunc(*calls, func(c invocation) bool { return c.name == "ln" }))
+			assert.Equal(t, bashEnv(t), "export FIREFOX_BIN='/usr/local/bin/firefox'\n")
+		})
+	}
+}
+
+func TestInstallFirefoxSkipsTheRequestedVersionWhenInstalled(t *testing.T) {
+	m := newFakeMozilla(t)
+	i, calls := preinstalledFirefox(t, m, "Mozilla Firefox "+cachedFirefoxVersion+"\n")
+
+	assert.NilError(t, i.InstallFirefox(context.Background(), FirefoxOptions{Version: cachedFirefoxVersion, InstallDir: usrLocalBin}))
+
+	assert.DeepEqual(t, m.takeRequests(), []string(nil))
+	for _, c := range *calls {
+		assert.Assert(t, c.name == "firefox", "the install went ahead: %+v", c)
+	}
+}

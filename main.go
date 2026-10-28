@@ -48,7 +48,7 @@ type installBrowserToolsCmd struct {
 	ChromeForTestingVersion    string `help:"Version of Chrome for Testing to install." default:"latest"`
 	ChromeForTestingInstallDir string `help:"Directory to symlink Chrome for Testing into and copy its driver into." default:"/usr/local/bin"`
 
-	FirefoxVersion    string `help:"Version of Firefox to install." default:"latest"`
+	FirefoxVersion    string `help:"Version of Firefox to install. latest keeps an installed Firefox of any version." default:"latest"`
 	FirefoxInstallDir string `help:"Directory to install Firefox into." default:"/usr/local/bin"`
 
 	GeckodriverVersion    string `help:"Release tag of geckodriver to install." default:"latest"`
@@ -144,7 +144,7 @@ func (c *installGeckodriverCmd) Run(ctx context.Context, client *sdk.Client) err
 }
 
 type installFirefoxCmd struct {
-	Version    string `help:"Version of Firefox to install, e.g. 149.0.2 or 140.9.1esr. Defaults to the latest stable release." default:"latest"`
+	Version    string `help:"Version of Firefox to install, e.g. 149.0.2 or 140.9.1esr. Defaults to the latest stable release, which keeps an installed Firefox of any version." default:"latest"`
 	InstallDir string `help:"Directory to install Firefox into. A symlink is also created in /usr/local/bin." default:"/usr/local/bin"`
 	UseCache   bool   `help:"Restore and save the Firefox installer via the job cache. Ignored when --version is latest." default:"false"`
 	CacheKey   string `help:"Cache key prefix, for invalidating cached entries." default:"v1"`
