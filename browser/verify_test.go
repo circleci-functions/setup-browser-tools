@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -146,39 +147,49 @@ func TestParseSumsLine(t *testing.T) {
 	}
 }
 
+// The keys in testdata/gpg are throwaway ones made for these tests. "pinned"
+// has a certify-only primary key and a signing subkey, as Mozilla's release key
+// does; "other" is an unrelated key. Each SHA256SUMS.*.asc is a detached
+// signature over testdata/SHA256SUMS.
+const (
+	testPinnedKey    = "2AB70643F3597EDADCD9CC1C769BC9F386C12C96"
+	testPinnedSubkey = "BAA16EDF962F27DA4BD9F855C4423E21A536D811"
+	testOtherKey     = "0450652AA27E0BBFD0B1CCD873D94300B9DD3BE7"
+)
+
+// validSig is gpg's status line for a good signature by a subkey of primary.
+func validSig(primary string) string {
+	return "[GNUPG:] VALIDSIG " + testPinnedSubkey + " 2026-10-27 1793129278 0 4 0 1 8 00 " + primary + "\n"
+}
+
 func TestVerifyGPGRequiresGPG(t *testing.T) {
 	r := &Runner{Priv: rootPrivilege(), Out: io.Discard}
 	h := Host{LookPath: fakePath()}
 
-	err := VerifyGPG(context.Background(), r, h, "", "SHA256SUMS.asc", "SHA256SUMS")
+	err := VerifyGPG(context.Background(), r, h, "KEY", "SHA256SUMS.asc", "SHA256SUMS", testPinnedKey)
 	assert.Assert(t, err != nil)
 	assert.Assert(t, strings.Contains(err.Error(), "gpg is required"),
 		"a missing gpg must fail rather than skip verification: %v", err)
 }
 
-func TestVerifyGPGInvokesGPG(t *testing.T) {
-	rec := &recorder{}
+func TestVerifyGPGUsesAKeyringOfItsOwn(t *testing.T) {
+	rec := &recorder{stdout: validSig(testPinnedKey)}
 	r := &Runner{Priv: sudoPrivilege(), Out: io.Discard, Executor: rec.exec}
 	h := Host{LookPath: fakePath("gpg")}
 
-	assert.NilError(t, VerifyGPG(context.Background(), r, h, "KEY", "SHA256SUMS.asc", "SHA256SUMS"))
+	assert.NilError(t, VerifyGPG(context.Background(), r, h, "KEY", "SHA256SUMS.asc", "SHA256SUMS", testPinnedKey))
 
 	assert.Equal(t, len(rec.calls), 2)
-	assert.DeepEqual(t, rec.calls[0].args, []string{"--import", "KEY"})
-	assert.DeepEqual(t, rec.calls[1].args, []string{"--verify", "SHA256SUMS.asc", "SHA256SUMS"})
+	home := rec.calls[0].args[1]
+	isolated := []string{"--homedir", home, "--batch", "--no-tty", "--no-autostart"}
+	assert.DeepEqual(t, rec.calls[0].args, append(isolated, "--import", "KEY"))
+	assert.DeepEqual(t, rec.calls[1].args,
+		append(isolated, "--status-fd", "1", "--verify", "SHA256SUMS.asc", "SHA256SUMS"))
 	for _, c := range rec.calls {
 		assert.Equal(t, c.name, "gpg", "gpg must not be run through sudo")
 	}
-}
-
-func TestVerifyGPGSkipsImportWithoutAKey(t *testing.T) {
-	rec := &recorder{}
-	r := &Runner{Priv: rootPrivilege(), Out: io.Discard, Executor: rec.exec}
-	h := Host{LookPath: fakePath("gpg")}
-
-	assert.NilError(t, VerifyGPG(context.Background(), r, h, "", "SHA256SUMS.asc", "SHA256SUMS"))
-	assert.Equal(t, len(rec.calls), 1)
-	assert.DeepEqual(t, rec.calls[0].args, []string{"--verify", "SHA256SUMS.asc", "SHA256SUMS"})
+	_, err := os.Stat(home)
+	assert.Assert(t, errors.Is(err, os.ErrNotExist), "the temporary keyring was left behind: %v", err)
 }
 
 func TestVerifyGPGPropagatesFailure(t *testing.T) {
@@ -186,7 +197,108 @@ func TestVerifyGPGPropagatesFailure(t *testing.T) {
 	r := &Runner{Priv: rootPrivilege(), Out: io.Discard, Executor: rec.exec}
 	h := Host{LookPath: fakePath("gpg")}
 
-	err := VerifyGPG(context.Background(), r, h, "", "SHA256SUMS.asc", "SHA256SUMS")
-	assert.Assert(t, err != nil)
-	assert.Assert(t, strings.Contains(err.Error(), "verify signature on SHA256SUMS"))
+	err := VerifyGPG(context.Background(), r, h, "KEY", "SHA256SUMS.asc", "SHA256SUMS", testPinnedKey)
+	assert.ErrorContains(t, err, "import signing key for SHA256SUMS")
+}
+
+// TestVerifyGPGPinsThePrimaryKey runs the real gpg over the fixtures in
+// testdata/gpg, since what matters is how gpg itself reports each case.
+func TestVerifyGPGPinsThePrimaryKey(t *testing.T) {
+	if _, err := exec.LookPath("gpg"); err != nil {
+		if os.Getenv("CI") != "" {
+			t.Fatal("gpg is not installed")
+		}
+		t.Skip("gpg is not installed")
+	}
+
+	tests := []struct {
+		name            string
+		keys            []string
+		sig             string
+		signed          string
+		wantErrContains string
+	}{
+		{
+			name:   "a signature by a subkey of the pinned primary key",
+			keys:   []string{"pinned.key"},
+			sig:    "SHA256SUMS.subkey.asc",
+			signed: "SHA256SUMS",
+		},
+		{
+			name:            "a signature by a key the key file does not hold",
+			keys:            []string{"pinned.key"},
+			sig:             "SHA256SUMS.other.asc",
+			signed:          "SHA256SUMS",
+			wantErrContains: "does not verify against key " + testPinnedKey,
+		},
+		{
+			// What a poisoned cache entry or a compromised mirror could serve: a
+			// key, and a manifest it really did sign.
+			name:            "a good signature by a key other than the pinned one",
+			keys:            []string{"other.key"},
+			sig:             "SHA256SUMS.other.asc",
+			signed:          "SHA256SUMS",
+			wantErrContains: "is by key " + testOtherKey + ", not by the expected key " + testPinnedKey,
+		},
+		{
+			name:            "another key served alongside the pinned one",
+			keys:            []string{"pinned.key", "other.key"},
+			sig:             "SHA256SUMS.other.asc",
+			signed:          "SHA256SUMS",
+			wantErrContains: "not by the expected key " + testPinnedKey,
+		},
+		{
+			name:            "the pinned key's signature over a different file",
+			keys:            []string{"pinned.key"},
+			sig:             "SHA256SUMS.subkey.asc",
+			signed:          "SHA512SUMS",
+			wantErrContains: "BADSIG",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// gpg's default home points somewhere observable, to show it is left
+			// alone.
+			userHome := t.TempDir()
+			t.Setenv("GNUPGHOME", userHome)
+			t.Setenv("HOME", userHome)
+
+			var keys []byte
+			for _, name := range tc.keys {
+				b, err := os.ReadFile(filepath.Join("testdata", "gpg", name))
+				assert.NilError(t, err)
+				keys = append(keys, b...)
+			}
+			keyPath := filepath.Join(t.TempDir(), "KEY")
+			assert.NilError(t, os.WriteFile(keyPath, keys, 0o600)) //nolint:gosec // keyPath is under t.TempDir()
+
+			r := &Runner{Priv: rootPrivilege(), Out: io.Discard}
+			h := Host{LookPath: exec.LookPath}
+			err := VerifyGPG(context.Background(), r, h, keyPath,
+				filepath.Join("testdata", "gpg", tc.sig), filepath.Join("testdata", tc.signed), testPinnedKey)
+
+			if tc.wantErrContains == "" {
+				assert.NilError(t, err)
+			} else {
+				assert.ErrorContains(t, err, tc.wantErrContains)
+			}
+			left, err := os.ReadDir(userHome)
+			assert.NilError(t, err)
+			assert.Equal(t, len(left), 0, "gpg wrote to the user's home: %v", left)
+		})
+	}
+}
+
+func TestValidSigners(t *testing.T) {
+	status := "[GNUPG:] NEWSIG\n" +
+		"[GNUPG:] KEYEXPIRED 1684354261\n" +
+		"[GNUPG:] GOODSIG 5ECB6497C1A20256 Mozilla Software Releases <release@mozilla.com>\n" +
+		"[GNUPG:] VALIDSIG 09BEED63F3462A2DFFAB3B875ECB6497C1A20256 2026-04-03 1775240024 0 4 0 1 10 00 " +
+		"14F26682D0916CDD81E37B6D61B7B526D98F0353\n" +
+		// Without the primary key's fingerprint there is nothing to pin against.
+		"[GNUPG:] VALIDSIG 09BEED63F3462A2DFFAB3B875ECB6497C1A20256 2026-04-03 1775240024 0 4 0 1 10 00\n" +
+		"VALIDSIG 09BEED63F3462A2DFFAB3B875ECB6497C1A20256 is not a status line 1 2 3 4 5 6 7\n"
+
+	assert.DeepEqual(t, validSigners(status), []string{"14F26682D0916CDD81E37B6D61B7B526D98F0353"})
 }
