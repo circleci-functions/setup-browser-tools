@@ -3,6 +3,7 @@ package browser
 import (
 	"archive/tar"
 	"archive/zip"
+	"bufio"
 	"compress/bzip2"
 	"compress/gzip"
 	"errors"
@@ -18,6 +19,11 @@ import (
 // maxEntrySize caps what a single archive member may expand to, so a malformed
 // or hostile archive cannot fill the disk.
 const maxEntrySize = 2 << 30
+
+// readBufferSize is the buffer between an archive file and its decompressor.
+// xz reads the file a few bytes at a time, so unbuffered each read is a
+// syscall: Firefox's 90 MB .tar.xz took over 30 s to extract rather than 7 s.
+const readBufferSize = 1 << 20
 
 var ErrUnknownArchive = errors.New("unrecognised archive format")
 
@@ -125,7 +131,7 @@ func extractTar(archivePath, destDir string, wrap decompressor) error {
 	}
 	defer f.Close()
 
-	decompressed, err := wrap(f)
+	decompressed, err := wrap(bufio.NewReaderSize(f, readBufferSize))
 	if err != nil {
 		return err
 	}
