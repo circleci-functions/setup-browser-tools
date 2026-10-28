@@ -257,10 +257,23 @@ func (i *Installer) installFirefoxDependencies(ctx context.Context) error {
 		if err := i.Runner.AptUpdate(ctx); err != nil {
 			return err
 		}
-		return i.aptInstall(ctx, i.withGPG("gnupg", "libasound-dev", "libxt6", "libgtk-3-dev", "libdbus-glib-1-2")...)
+		// The libraries Firefox loads, not the orb's -dev packages, whose headers
+		// and toolchain pulled in three times as many packages.
+		return i.aptInstallLibraries(ctx, i.withGPG("gnupg",
+			"libgtk-3-0", i.alsaPackage(ctx), "libxt6", "libdbus-glib-1-2", "libx11-xcb1")...)
 	default:
 		return Unsupported("Firefox", i.Platform, "")
 	}
+}
+
+// alsaPackage names ALSA's library package. Ubuntu 24.04 and Debian 13 renamed
+// it libasound2t64, and on Ubuntu 24.04 libasound2 is a virtual package with two
+// providers, which apt refuses to choose between.
+func (i *Installer) alsaPackage(ctx context.Context) string {
+	if _, err := i.Runner.Output(ctx, "apt-cache", "show", "libasound2t64"); err == nil {
+		return "libasound2t64"
+	}
+	return "libasound2"
 }
 
 // withGPG adds gpgPackage to packages when gpg is not on PATH. The download is

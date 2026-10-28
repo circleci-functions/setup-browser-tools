@@ -390,6 +390,43 @@ func TestInstallFirefoxRejectsUnresolvableVersion(t *testing.T) {
 	assert.Assert(t, strings.Contains(err.Error(), "FF_NOT_SET"))
 }
 
+func TestInstallFirefoxDependenciesOnDebianInstallsOnlyLibraries(t *testing.T) {
+	tests := []struct {
+		name string
+		// t64 is whether apt knows libasound2t64, as on Ubuntu 24.04 and Debian 13.
+		t64      bool
+		wantALSA string
+	}{
+		{name: "before the time_t rename", wantALSA: "libasound2"},
+		{name: "after the time_t rename", t64: true, wantALSA: "libasound2t64"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			i, calls := testInstaller(t, installerOpts{distro: DistroDebian, onPath: []string{"gpg"}})
+			scripted := i.Runner.Executor
+			i.Runner.Executor = func(ctx context.Context, name string, args, env []string, out io.Writer) (string, error) {
+				if name == "apt-cache" && !tc.t64 {
+					*calls = append(*calls, invocation{name: name, args: args, env: env})
+					return "", errors.New("exit status 100")
+				}
+				return scripted(ctx, name, args, env, out)
+			}
+
+			assert.NilError(t, i.installFirefoxDependencies(context.Background()))
+
+			var install []string
+			for _, c := range *calls {
+				if c.name == "apt-get" && len(c.args) > 0 && c.args[0] == "install" {
+					install = c.args
+				}
+			}
+			assert.DeepEqual(t, install, []string{"install", "-y", "--no-install-recommends",
+				"libgtk-3-0", tc.wantALSA, "libxt6", "libdbus-glib-1-2", "libx11-xcb1"})
+		})
+	}
+}
+
 func TestInstallFirefoxDependenciesAddsGPGWhenMissing(t *testing.T) {
 	tests := []struct {
 		name    string

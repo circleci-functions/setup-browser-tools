@@ -431,6 +431,13 @@ func (i *Installer) aptInstall(ctx context.Context, packages ...string) error {
 	return err
 }
 
+// aptInstallLibraries installs packages without the ones they only recommend,
+// for the libraries a downloaded binary loads, which recommend tools and data
+// it never uses.
+func (i *Installer) aptInstallLibraries(ctx context.Context, packages ...string) error {
+	return i.aptInstall(ctx, append([]string{"--no-install-recommends"}, packages...)...)
+}
+
 // verifyChrome confirms Chrome runs and reports the version wanted.
 //
 // When the caller asked for "latest", any working install satisfies it. The
