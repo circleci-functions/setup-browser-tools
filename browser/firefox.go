@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // firefoxXZFrom is the major release from which Mozilla ships .tar.xz rather
@@ -398,7 +397,7 @@ func (i *Installer) fetchVerifiedSums(ctx context.Context, dir, version string) 
 
 func (i *Installer) unpackFirefox(ctx context.Context, dir, archive string, rel firefoxRelease, installDir string) error {
 	if i.Platform.IsMacOS() {
-		return i.installFirefoxMacOS(ctx, dir, archive, installDir)
+		return i.installFirefoxMacOS(ctx, dir, archive, rel.Version, installDir)
 	}
 	return i.installFirefoxLinux(ctx, dir, archive, rel.Version, installDir)
 }
@@ -428,7 +427,7 @@ func (i *Installer) installFirefoxLinux(ctx context.Context, dir, archive, versi
 	return i.linkFirefox(ctx, filepath.Join(versioned, "firefox"), installDir)
 }
 
-func (i *Installer) installFirefoxMacOS(ctx context.Context, dir, archive, installDir string) error {
+func (i *Installer) installFirefoxMacOS(ctx context.Context, dir, archive, version, installDir string) error {
 	mount := filepath.Join(dir, "mount")
 	if err := mkdirAll(mount); err != nil {
 		return err
@@ -443,12 +442,26 @@ func (i *Installer) installFirefoxMacOS(ctx context.Context, dir, archive, insta
 		return err
 	}
 
-	wrapper := filepath.Join(dir, "firefox")
-	script := "#!/usr/bin/env bash\nexec /Applications/Firefox.app/Contents/MacOS/firefox \"$@\"\n"
-	if err := writeFile(wrapper, strings.NewReader(script), 0o755); err != nil {
+	// The links need a launcher, since Firefox started through a symlink to its
+	// binary fails with "Couldn't load XPCOM". It goes in the versioned
+	// directory a Linux install puts its tree in, as dir does not outlive the
+	// step.
+	launcher, err := writeLauncher(dir, "firefox-launcher", firefoxMacBinary)
+	if err != nil {
 		return err
 	}
-	return i.linkFirefox(ctx, wrapper, installDir)
+	versioned := filepath.Join(installDir, "firefox-"+version)
+	installed := filepath.Join(versioned, "firefox")
+	if err := i.Runner.Exec(ctx, "mkdir", "-p", versioned); err != nil {
+		return err
+	}
+	if err := i.Runner.Exec(ctx, "cp", launcher, installed); err != nil {
+		return err
+	}
+	if err := i.Runner.Exec(ctx, "chmod", "a+rx", versioned, installed); err != nil {
+		return err
+	}
+	return i.linkFirefox(ctx, installed, installDir)
 }
 
 // linkFirefox puts firefox both in installDir and in /usr/local/bin. The orb

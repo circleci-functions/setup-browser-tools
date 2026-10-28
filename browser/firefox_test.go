@@ -256,6 +256,31 @@ func TestLinkFirefoxCreatesBothSymlinks(t *testing.T) {
 	}
 }
 
+func TestInstallFirefoxMacOSLinksOutliveTheStep(t *testing.T) {
+	// The install's temp dir is removed when the step ends, so a link into it
+	// dangles in every later step. The acceptance suite covers the default
+	// install dir; this covers a custom one, whose links both have to reach
+	// the launcher copied into it.
+	i, calls := testInstaller(t, installerOpts{distro: DistroMacOS, arch: ArchARM64})
+	dir := t.TempDir()
+
+	assert.NilError(t, i.installFirefoxMacOS(context.Background(), dir, filepath.Join(dir, "Firefox 149.0.2.dmg"), "149.0.2", "/opt/tools/bin"))
+
+	want := "/opt/tools/bin/firefox-149.0.2/firefox"
+	var copied bool
+	var sources []string
+	for _, c := range *calls {
+		switch {
+		case c.name == "cp" && c.args[len(c.args)-1] == want:
+			copied = true
+		case c.name == "ln":
+			sources = append(sources, c.args[len(c.args)-2])
+		}
+	}
+	assert.Assert(t, copied, "the launcher was never copied to %s: %+v", want, *calls)
+	assert.DeepEqual(t, sources, []string{want, want})
+}
+
 func TestInstallFirefoxUnsupportedPlatforms(t *testing.T) {
 	tests := []struct {
 		name       string

@@ -379,6 +379,13 @@ jobs:
             chrome --version
             chromedriver --version
 
+  acceptance-macos-firefox-chrome-for-testing:
+    executor: macos
+    steps:
+      - acceptance:
+          platform: darwin/arm64
+          run: TestAcceptanceMacOS
+
   # A Firefox cache hit must install with Mozilla unreachable, which is what
   # --use-cache is for. The test reinstalls from the job's own cache with
   # archive.mozilla.org blocked.
@@ -442,6 +449,8 @@ workflows:
       - acceptance-debian-arm64-chrome-for-testing:
           requires: [build]
       - acceptance-debian-driver-install-dir:
+          requires: [build]
+      - acceptance-macos-firefox-chrome-for-testing:
           requires: [build]
       - toolkit/release-pr:
           name: release-pr

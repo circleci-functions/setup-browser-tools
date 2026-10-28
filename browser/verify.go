@@ -101,13 +101,20 @@ func digestFromManifest(manifestPath, entry string) (string, error) {
 	return "", &ErrNotInManifest{Entry: entry, Manifest: filepath.Base(manifestPath)}
 }
 
+// parseSumsLine splits a manifest line into its digest and name. The name is
+// everything after the digest, since it can contain spaces: Mozilla's macOS
+// build is "mac/en-US/Firefox 149.0.2.dmg".
 func parseSumsLine(line string) (digest, name string, ok bool) {
-	fields := strings.Fields(line)
-	if len(fields) != 2 {
+	digest, rest, found := strings.Cut(strings.TrimSpace(line), " ")
+	if !found {
 		return "", "", false
 	}
 	// sha256sum marks binary mode with a leading '*' on the filename.
-	return fields[0], strings.TrimPrefix(fields[1], "*"), true
+	name = strings.TrimPrefix(strings.TrimLeft(rest, " "), "*")
+	if digest == "" || name == "" {
+		return "", "", false
+	}
+	return digest, name, true
 }
 
 // VerifyGPG checks a detached signature over signed, importing keyPath first
