@@ -12,6 +12,11 @@ executors:
   debian:
     docker:
       - image: cimg/base:current
+  # Same image, arm64. Mozilla's aarch64 Firefox and Chrome for Testing run here.
+  debian-arm:
+    docker:
+      - image: cimg/base:current
+    resource_class: arm.medium
   alpine:
     docker:
       - image: alpine:3.21
@@ -83,73 +88,35 @@ jobs:
           paths:
             - dist
 
-  # Runs the acceptance suite. New install behaviour is covered by a test in
-  # acceptance/ and a row that runs it, rather than by a bash row like those
-  # below.
-  acceptance-debian-geckodriver:
-    executor: debian
+  # Runs the acceptance suite from the workspace binaries. Each workflow row is
+  # its own disposable executor running one -test.run pattern: the suite's real
+  # installs touch system locations (packages, /usr/local, /etc/hosts) that a
+  # sandbox cannot redirect, so scenarios must not share a machine. New install
+  # behaviour is covered by a test in acceptance/ and a row below, not a bash row.
+  acceptance-suite:
+    parameters:
+      executor:
+        type: string
+        default: debian
+      platform:
+        type: string
+        default: linux/amd64
+      run:
+        type: string
+        description: The tests to run, as a -test.run pattern.
+      alpine:
+        type: boolean
+        default: false
+        description: Install bash/git/curl first, which the Alpine image lacks.
+    executor: << parameters.executor >>
     steps:
+      - when:
+          condition: << parameters.alpine >>
+          steps:
+            - run: apk add --no-cache bash git curl
       - acceptance:
-          run: TestAcceptanceGeckodriver
-
-  # Each test checks the display from a fresh process after the function's has
-  # exited, which is what a later step is, so Xvfb outliving its step is part of
-  # what passes. The headed-browser test runs Chrome here and Chromium on Alpine.
-  acceptance-debian-xvfb:
-    executor: debian
-    steps:
-      - acceptance:
-          run: TestAcceptanceXvfb
-
-  acceptance-alpine-xvfb:
-    executor: alpine
-    steps:
-      - run: apk add --no-cache bash git curl
-      - acceptance:
-          run: TestAcceptanceXvfb
-
-  acceptance-debian-browser-bin:
-    executor: debian
-    steps:
-      - acceptance:
-          run: TestAcceptanceBrowserBin
-
-  # The suite's later steps run in bash, which the image lacks.
-  acceptance-alpine-browser-bin:
-    executor: alpine
-    steps:
-      - run: apk add --no-cache bash git curl
-      - acceptance:
-          run: TestAcceptanceBrowserBin
-
-  # Mozilla's linux-aarch64 build.
-  acceptance-debian-arm64-firefox:
-    executor: debian
-    resource_class: arm.medium
-    steps:
-      - acceptance:
-          platform: linux/arm64
-          run: TestAcceptanceLinuxARM64Firefox$
-
-  # Chrome for Testing is the Chrome and chromedriver an arm64 Debian job can
-  # have, which is what install-chromedriver's refusal there points to. The
-  # default set runs here too, where no Firefox is installed yet, so it installs
-  # Firefox afresh while skipping Google Chrome and ChromeDriver.
-  acceptance-debian-arm64-chrome-for-testing:
-    executor: debian
-    resource_class: arm.medium
-    steps:
-      - acceptance:
-          platform: linux/arm64
-          run: TestAcceptanceLinuxARM64(ChromeForTesting|ChromeDriverIsRefused|BrowserTools)$
-
-  # Drivers installed into a --install-dir that is missing and off PATH, which
-  # a later step has to find there by name.
-  acceptance-debian-driver-install-dir:
-    executor: debian
-    steps:
-      - acceptance:
-          run: TestAcceptanceDriverInstallDir
+          platform: << parameters.platform >>
+          run: << parameters.run >>
 
   # Real installs against real images. Nothing else in this repo executes an
   # install: the unit tests assert against the same reading of the orb that let
@@ -379,22 +346,6 @@ jobs:
             chrome --version
             chromedriver --version
 
-  acceptance-macos-firefox-chrome-for-testing:
-    executor: macos
-    steps:
-      - acceptance:
-          platform: darwin/arm64
-          run: TestAcceptanceMacOS
-
-  # A Firefox cache hit must install with Mozilla unreachable, which is what
-  # --use-cache is for. The test reinstalls from the job's own cache with
-  # archive.mozilla.org blocked.
-  acceptance-debian-firefox-cache:
-    executor: debian
-    steps:
-      - acceptance:
-          run: TestAcceptanceFirefoxCache
-
 workflows:
   test-publish:
     jobs:
@@ -432,25 +383,65 @@ workflows:
           requires: [build]
       - install-debian-opt-in-set:
           requires: [build]
-      - acceptance-debian-firefox-cache:
+      - acceptance-suite:
+          name: acceptance-debian-geckodriver
+          run: TestAcceptanceGeckodriver
           requires: [build]
-      - acceptance-debian-geckodriver:
+      - acceptance-suite:
+          name: acceptance-debian-browser-bin
+          run: TestAcceptanceBrowserBin
           requires: [build]
-      - acceptance-debian-xvfb:
+      - acceptance-suite:
+          name: acceptance-debian-driver-install-dir
+          # Drivers installed into a --install-dir that is missing and off PATH,
+          # which a later step has to find there by name.
+          run: TestAcceptanceDriverInstallDir
           requires: [build]
-      - acceptance-alpine-xvfb:
+      # Xvfb must outlive the step that starts it: a later step checks the
+      # display from a fresh process. Runs Chrome on Debian, Chromium on Alpine.
+      - acceptance-suite:
+          name: acceptance-debian-xvfb
+          run: TestAcceptanceXvfb
           requires: [build]
-      - acceptance-debian-browser-bin:
+      - acceptance-suite:
+          name: acceptance-alpine-xvfb
+          executor: alpine
+          alpine: true
+          run: TestAcceptanceXvfb
           requires: [build]
-      - acceptance-alpine-browser-bin:
+      - acceptance-suite:
+          name: acceptance-alpine-browser-bin
+          executor: alpine
+          alpine: true
+          run: TestAcceptanceBrowserBin
           requires: [build]
-      - acceptance-debian-arm64-firefox:
+      # A Firefox cache hit must install with archive.mozilla.org blocked, which
+      # --use-cache is for; the test reinstalls from the job's own cache.
+      - acceptance-suite:
+          name: acceptance-debian-firefox-cache
+          run: TestAcceptanceFirefoxCache
           requires: [build]
-      - acceptance-debian-arm64-chrome-for-testing:
+      # Mozilla's linux-aarch64 build.
+      - acceptance-suite:
+          name: acceptance-debian-arm64-firefox
+          executor: debian-arm
+          platform: linux/arm64
+          run: TestAcceptanceLinuxARM64Firefox$
           requires: [build]
-      - acceptance-debian-driver-install-dir:
+      # Chrome for Testing is the Chrome/chromedriver an arm64 Debian job can
+      # have. The default set runs here too, where no Firefox is installed yet,
+      # so it installs Firefox afresh while skipping Google Chrome/ChromeDriver.
+      - acceptance-suite:
+          name: acceptance-debian-arm64-chrome-for-testing
+          executor: debian-arm
+          platform: linux/arm64
+          run: TestAcceptanceLinuxARM64(ChromeForTesting|ChromeDriverIsRefused|BrowserTools)$
           requires: [build]
-      - acceptance-macos-firefox-chrome-for-testing:
+      - acceptance-suite:
+          name: acceptance-macos-firefox-chrome-for-testing
+          executor: macos
+          platform: darwin/arm64
+          run: TestAcceptanceMacOS
           requires: [build]
       - toolkit/release-pr:
           name: release-pr
