@@ -3,6 +3,7 @@ package browser
 import (
 	"archive/tar"
 	"archive/zip"
+	"bufio"
 	"compress/gzip"
 	"errors"
 	"io"
@@ -41,6 +42,23 @@ func TestExtract(t *testing.T) {
 			assert.Equal(t, string(notes), "notes\n")
 		})
 	}
+}
+
+// TestExtractTarBuffersTheArchive checks the decompressor reads through a
+// buffer. Handed the file itself, xz makes a syscall for every few bytes,
+// which is what made extracting Firefox take minutes.
+func TestExtractTarBuffersTheArchive(t *testing.T) {
+	var got io.Reader
+	spy := func(r io.Reader) (io.Reader, error) {
+		got = r
+		return xzReader(r)
+	}
+
+	assert.NilError(t, extractTar(filepath.Join("testdata", "archive.tar.xz"), t.TempDir(), spy))
+
+	buffered, ok := got.(*bufio.Reader)
+	assert.Assert(t, ok, "the decompressor was handed a %T", got)
+	assert.Equal(t, buffered.Size(), readBufferSize)
 }
 
 func TestExtractUnknownFormat(t *testing.T) {
