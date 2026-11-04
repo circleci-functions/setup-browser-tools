@@ -267,7 +267,7 @@ jobs:
 
   install-debian-bare-firefox-edge:
     docker:
-      - image: debian:bookworm
+      - image: debian:trixie
     steps:
       - run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
       - checkout
