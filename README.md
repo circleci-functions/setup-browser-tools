@@ -2,7 +2,7 @@
 
 Installs browsers and browser-testing tools into a CircleCI job: Google Chrome, Chrome for Testing, ChromeDriver, Microsoft Edge and its WebDriver, Firefox, and geckodriver. Each is a subcommand, and `install-browser-tools` installs a default set in one step. `start-xvfb` gives headed browser tests on Linux a virtual display.
 
-Use this function instead of the circleci/browser-tools orb.
+Use this function instead of the `circleci/browser-tools` orb.
 
 ## Usage
 
