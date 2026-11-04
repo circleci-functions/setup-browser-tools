@@ -6,7 +6,7 @@ orbs:
 executors:
   go:
     docker:
-      - image: cimg/go:1.26
+      - image: cimg/go:1.27
   # The install jobs exec the binary `build` cross-compiled, so they run on bare
   # images rather than language-preinstalled ones.
   debian:
