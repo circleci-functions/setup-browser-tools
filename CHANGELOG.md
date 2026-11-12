@@ -6,6 +6,18 @@ by its release PR (see [RELEASE.md](RELEASE.md)) and becomes its GitHub release 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-11-12
+
+### What's Changed
+* Collapse acceptance jobs into one parameterized job by @stiyyagura0901 in https://github.com/circleci-functions/setup-browser-tools/pull/50
+* Say to use setup-browser-tools instead of the circleci/browser-tools orb by @mangyau in https://github.com/circleci-functions/setup-browser-tools/pull/54
+* Publish a pre-release from a branch with a pipeline parameter by @stiyyagura0901 in https://github.com/circleci-functions/setup-browser-tools/pull/55
+
+### New Contributors
+* @mangyau made their first contribution in https://github.com/circleci-functions/setup-browser-tools/pull/54
+
+**Full Changelog**: https://github.com/circleci-functions/setup-browser-tools/compare/v0.5.0...v0.6.0
+
 ## [0.5.0] - 2026-10-29
 
 ### What's Changed
