@@ -27,7 +27,7 @@ executors:
     resource_class: arm.medium
   alpine:
     docker:
-      - image: alpine:3.21
+      - image: alpine:3.24
   rhel:
     docker:
       - image: rockylinux:9
