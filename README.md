@@ -29,16 +29,6 @@ doesn't have.
 `functions:` entry at the latest version. The alias is yours to choose. A
 negatable flag such as `--no-firefox` is written as `firefox: false`.
 
-Where the `functions:` block isn't available, as on CircleCI Server, run the
-function by its full name. Everything after `--` is passed to the function:
-
-```yaml
-- run: circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-chrome --version 147.0.7727.55
-```
-
-The full `github.com/` path and the `--` separator are both required. A bare
-`setup-browser-tools@<version>` does not resolve.
-
 ## Capabilities
 
 - **Installs a default set** — Chrome, ChromeDriver, Firefox and geckodriver — with one command
@@ -244,6 +234,9 @@ set it there:
     command: circleci run github.com/circleci-functions/setup-browser-tools@<version> -- install-chrome
     no_output_timeout: 5m
 ```
+
+The full `github.com/` path and the `--` separator are both required. A bare
+`setup-browser-tools@<version>` does not resolve.
 
 ## Preconditions
 
